@@ -3,10 +3,11 @@ mae:
   stage: 0
   task: "mae_pretraining"
   data:
-    root: "/workspace/FloodAssessment/data/raw/ply/train"
+    root: "data/processed/train"
     voxel_size: 0.04
-    batch_size: 4
-    num_workers: 4
+    batch_size: 1
+    num_workers: 2
+    max_points: 100000
   model:
     mask_ratio: 0.7
   training:

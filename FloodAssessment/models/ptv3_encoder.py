@@ -1,24 +1,51 @@
 import sys
+import os
 import torch
 import torch.nn as nn
 from addict import Dict
 
-# Ensure we can import from the PointTransformerV3 directory
-# This assumes the docker container or env has it in PYTHONPATH
-try:
-    from model import PointTransformerV3
-except ImportError:
-    # Fallback for local testing if not in path
-    # PointTransformerV3 is in /workspace/PointTransformerV3
-    # We added /workspace to PYTHONPATH in docker-compose
+# Dynamic path usage to find PointTransformerV3
+ptv3_path = None
+# Check common locations
+possible_paths = [
+    os.path.join(os.path.dirname(os.path.dirname(__file__)), "PointTransformerV3"), # Inside project root
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "PointTransformerV3"), # Sibling to project
+    "/workspace/PointTransformerV3",
+    "/root/PointTransformerV3",
+    "/root/model/PointTransformerV3",
+    os.path.expanduser("~/PointTransformerV3")
+]
+
+for path in possible_paths:
+    if os.path.exists(os.path.join(path, "model.py")):
+        ptv3_path = path
+        break
+
+if ptv3_path:
+    # Add the PARENT directory to sys.path so we can import 'PointTransformerV3' as a package
+    # This is critical for relative imports inside the library to work
+    parent_dir = os.path.dirname(ptv3_path)
+    if parent_dir not in sys.path:
+        sys.path.append(parent_dir)
     try:
+        # Import as a package
         from PointTransformerV3.model import PointTransformerV3
     except ImportError as e:
-        print(f"Warning: Could not import PointTransformerV3. Make sure PointTransformerV3 is in PYTHONPATH. Error: {e}")
-        # Dummy class for syntax checking if import fails (don't rely on this at runtime)
-        class PointTransformerV3(nn.Module):
-            def __init__(self, *args, **kwargs): super().__init__()
-            def forward(self, x): return x
+        print(f"Error importing PointTransformerV3 from {ptv3_path}: {e}")
+        sys.exit(1)
+else:
+    # Try standard import as last resort (if installed via pip)
+    try:
+        from PointTransformerV3.model import PointTransformerV3
+    except ImportError:
+        print("\n" + "="*60)
+        print("CRITICAL ERROR: PointTransformerV3 library not found!")
+        print("="*60)
+        print(f"Checked the following locations:\n" + "\n".join(possible_paths))
+        print("\nPlease clone the repository:")
+        print("    git clone https://github.com/Pointcept/PointTransformerV3.git")
+        print("="*60 + "\n")
+        sys.exit(1)
 
 class SharedPTv3Encoder(nn.Module):
     def __init__(self, input_channels=6, enc_depths=(2, 2, 2, 6, 2), enc_channels=(32, 64, 128, 256, 512)):

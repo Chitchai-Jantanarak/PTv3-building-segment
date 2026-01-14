@@ -1,3 +1,4 @@
+import sys
 import os
 import yaml
 import torch
@@ -5,15 +6,19 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import glob
 
+# Add project root to sys.path to find 'models' and 'preprocessing'
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from models.ptv3_encoder import SharedPTv3Encoder
 from models.mae_decoder import MAEDecoder
 from preprocessing.converter import prepare_data_for_ptv3
 
 class PointDataset(Dataset):
-    def __init__(self, root, voxel_size):
+    def __init__(self, root, voxel_size, max_points=None):
         all_files = glob.glob(os.path.join(root, "*.las")) + \
                     glob.glob(os.path.join(root, "*.laz")) + \
-                    glob.glob(os.path.join(root, "*.ply"))
+                    glob.glob(os.path.join(root, "*.ply")) + \
+                    glob.glob(os.path.join(root, "*.pth"))
         
         # Filter out empty files
         self.files = [f for f in all_files if os.path.exists(f) and os.path.getsize(f) > 1024]
@@ -21,9 +26,10 @@ class PointDataset(Dataset):
         if len(self.files) < len(all_files):
             print(f"Warning: Ignored {len(all_files) - len(self.files)} empty/small files.")
         self.voxel_size = voxel_size
+        self.max_points = max_points
         
         if len(self.files) == 0:
-            print(f"Warning: No LAS/LAZ files found in {root}. Using dummy data for testing.")
+            print(f"Warning: No LAS/LAZ/PTH files found in {root}. Using dummy data for testing.")
 
     def __len__(self):
         return max(len(self.files), 1)
@@ -41,8 +47,25 @@ class PointDataset(Dataset):
             
         path = self.files[idx]
         try:
-            data_dict, _ = prepare_data_for_ptv3(path, voxel_size=self.voxel_size)
-            return data_dict
+            if path.endswith('.pth'):
+                data_dict = torch.load(path)
+                # Ensure compatibility if max_points is set (though preprocessing usually handles it)
+                # But if we want to enforce it on .pth files too:
+                if self.max_points and len(data_dict['coord']) > self.max_points:
+                     # Simple random downsample for .pth
+                     choice = torch.randperm(len(data_dict['coord']))[:self.max_points]
+                     data_dict['coord'] = data_dict['coord'][choice]
+                     data_dict['feat'] = data_dict['feat'][choice]
+                     # data_dict['grid_coord'] = data_dict['grid_coord'][choice] # grid_coord logic might break if we just slice? 
+                     # Actually pre-processed .pth usually has grid_coord synced. 
+                     # Re-calc grid_coord is safer or just slice
+                     data_dict['grid_coord'] = data_dict['grid_coord'][choice]
+                     data_dict['offset'] = torch.IntTensor([len(data_dict['coord'])])
+                     data_dict['batch'] = torch.zeros(len(data_dict['coord'])).long()
+                return data_dict
+            else:
+                data_dict, _ = prepare_data_for_ptv3(path, voxel_size=self.voxel_size, max_points=self.max_points)
+                return data_dict
         except Exception as e:
             print(f"Error loading {path}: {e}")
             return None
@@ -91,7 +114,11 @@ def train_mae_pretraining():
     print(f"Starting Stage 0: MAE Pretraining on {device}")
     
     # Data
-    dataset = PointDataset(cfg['data']['root'], cfg['data']['voxel_size'])
+    dataset = PointDataset(
+        cfg['data']['root'], 
+        cfg['data']['voxel_size'],
+        max_points=cfg['data'].get('max_points', 80000)
+    )
     dataloader = DataLoader(
         dataset, 
         batch_size=cfg['data']['batch_size'], 
@@ -101,16 +128,49 @@ def train_mae_pretraining():
     )
     
     # Model
-    encoder = SharedPTv3Encoder()
+    # Determine input channels from dataset sample
+    sample_data = dataset[0]
+    input_dim = sample_data['feat'].shape[1]
+    print(f"Detected input feature dimension: {input_dim}")
+    
+    encoder = SharedPTv3Encoder(input_channels=input_dim)
     model = MAEDecoder(encoder, mask_ratio=cfg['model']['mask_ratio']).to(device)
     
     optimizer = optim.AdamW(model.parameters(), lr=cfg['training']['lr'])
     
+    # Resume from checkpoint if exists
+    start_epoch = 0
+    save_path = cfg['training']['save_path']
+    # If the user-defined save path exists (meaning we have a 'latest' checkpoint), load it
+    if os.path.exists(save_path):
+        print(f"Resuming from checkpoint: {save_path}")
+        try:
+            # Check if it's a full model checkpoint or just encoder
+            checkpoint = torch.load(save_path, map_location=device)
+            # If it's a state dict, try loading it
+            if isinstance(checkpoint, dict):
+                # Try loading into encoder first (since we ignore decoder weights usually)
+                try:
+                    model.encoder.load_state_dict(checkpoint, strict=False)
+                    print("Loaded encoder weights successfully.")
+                except Exception as e:
+                    print(f"Could not load as encoder weights: {e}")
+            else:
+                print("Checkpoint format unrecognized, starting from scratch.")
+        except Exception as e:
+            print(f"Error loading checkpoint: {e}. Starting from scratch.")
+    else:
+        print("No existing checkpoint found. Starting fresh.")
+
     # Training Loop
     model.train()
-    for epoch in range(cfg['training']['epochs']):
+    print(f"Detailed logs will be printed every 10 batches.")
+    
+    for epoch in range(start_epoch, cfg['training']['epochs']):
         total_loss = 0
-        for batch in dataloader:
+        num_batches = len(dataloader)
+        
+        for batch_idx, batch in enumerate(dataloader):
             if batch is None:
                 continue
             # Move to device
@@ -121,7 +181,11 @@ def train_mae_pretraining():
             optimizer.zero_grad()
             
             # Forward
-            reconstruction, mask = model(batch)
+            try:
+                reconstruction, mask = model(batch)
+            except AttributeError as e:
+                 print(f"Forward pass error: {e}. Ensure PointTransformerV3 is returning a Point/Dict object.")
+                 raise e
             
             # Loss Calculation (MSE on masked points)
             target = batch['feat'] # Reconstructing features
@@ -136,17 +200,27 @@ def train_mae_pretraining():
             rec_loss.backward()
             optimizer.step()
             
-            total_loss += rec_loss.item()
+            loss_val = rec_loss.item()
+            total_loss += loss_val
             
-        print(f"Epoch {epoch+1}/{cfg['training']['epochs']} - Loss: {total_loss/len(dataloader):.4f}")
+            # Verbose logging
+            if (batch_idx + 1) % 10 == 0:
+                print(f"Epoch [{epoch+1}/{cfg['training']['epochs']}] Batch [{batch_idx+1}/{num_batches}] Loss: {loss_val:.4f}")
+            
+        avg_loss = total_loss / max(1, len(dataloader))
+        print(f"==> Epoch {epoch+1} Completed. Avg Loss: {avg_loss:.4f}")
         
         # Save Checkpoint every epoch
         os.makedirs("checkpoints", exist_ok=True)
-        # Save latest
-        torch.save(model.encoder.state_dict(), cfg['training']['save_path'])
-        # Save epoch specific (optional, can clutter disk if too many)
-        torch.save(model.encoder.state_dict(), cfg['training']['save_path'].replace(".pth", f"_epoch_{epoch+1}.pth"))
-        print(f"Saved checkpoint to {cfg['training']['save_path']}")
+        # Save latest (Encoder only as per config request, but for resuming we usually want optimizer too.
+        # keeping strictly to user request of 'pth files' for now, but saving encoder for next stages)
+        torch.save(model.encoder.state_dict(), save_path)
+        
+        # Save epoch specific
+        epoch_save_path = save_path.replace(".pth", f"_epoch_{epoch+1}.pth")
+        torch.save(model.encoder.state_dict(), epoch_save_path)
+        print(f"Saved Checkpoint: {os.path.abspath(epoch_save_path)}")
+        print(f"Updated Latest: {os.path.abspath(save_path)}")
         
     # Save Encoder
     os.makedirs("checkpoints", exist_ok=True)

@@ -52,11 +52,11 @@ class SharedPTv3Encoder(nn.Module):
         super().__init__()
         self.backbone = PointTransformerV3(
             in_channels=input_channels,
-            enc_depths=enc_depths,
+            enc_depths=(2, 2, 2, 4, 2), # Reduced from (2, 2, 2, 6, 2)
             enc_channels=enc_channels,
-            dec_depths=(2, 2, 2, 2), # Standard decoder config, though we might not use it all
+            dec_depths=(1, 1, 1, 1), # Reduced from (2, 2, 2, 2)
             dec_channels=(64, 64, 128, 256),
-            enable_flash=True, # Attempt to use flash attn
+            enable_flash=False, # Disable Flash Attn to prevent Core Dump on 5090/Nightly
             cls_mode=False # We want dense features
         )
         

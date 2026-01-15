@@ -1,5 +1,13 @@
 import sys
 import os
+
+# Force spconv to use simple algorithms (prevents crash on RTX 5090)
+# Force spconv to use simple algorithms (prevents crash on RTX 5090)
+os.environ["SPCONV_ALGO"] = "native"
+# Mitigate OOM fragmentation
+os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
+
+import cumm # Critical: Load bindings before spconv
 import yaml
 import torch
 import torch.optim as optim
@@ -51,14 +59,18 @@ class PointDataset(Dataset):
                 data_dict = torch.load(path)
                 # Ensure compatibility if max_points is set (though preprocessing usually handles it)
                 # But if we want to enforce it on .pth files too:
+                # Sanity check for corruption (NaNs/Infs) that causes Core Dump
+                if torch.isnan(data_dict['coord']).any() or torch.isinf(data_dict['coord']).any() or \
+                   torch.isnan(data_dict['feat']).any() or torch.isinf(data_dict['feat']).any():
+                    print(f"Warning: Corrupt data (NaN/Inf) found in {path}. Skipping.")
+                    return None
+                    
+                # Ensure compatibility if max_points is set
                 if self.max_points and len(data_dict['coord']) > self.max_points:
-                     # Simple random downsample for .pth
+                     # Simple random downsample
                      choice = torch.randperm(len(data_dict['coord']))[:self.max_points]
                      data_dict['coord'] = data_dict['coord'][choice]
                      data_dict['feat'] = data_dict['feat'][choice]
-                     # data_dict['grid_coord'] = data_dict['grid_coord'][choice] # grid_coord logic might break if we just slice? 
-                     # Actually pre-processed .pth usually has grid_coord synced. 
-                     # Re-calc grid_coord is safer or just slice
                      data_dict['grid_coord'] = data_dict['grid_coord'][choice]
                      data_dict['offset'] = torch.IntTensor([len(data_dict['coord'])])
                      data_dict['batch'] = torch.zeros(len(data_dict['coord'])).long()
@@ -134,9 +146,11 @@ def train_mae_pretraining():
     print(f"Detected input feature dimension: {input_dim}")
     
     encoder = SharedPTv3Encoder(input_channels=input_dim)
-    model = MAEDecoder(encoder, mask_ratio=cfg['model']['mask_ratio']).to(device)
+    model = MAEDecoder(encoder, mask_ratio=cfg['model']['mask_ratio'], enc_channels=64, target_channels=input_dim).to(device)
     
     optimizer = optim.AdamW(model.parameters(), lr=cfg['training']['lr'])
+    
+    best_loss = float('inf')
     
     # Resume from checkpoint if exists
     start_epoch = 0
@@ -171,6 +185,9 @@ def train_mae_pretraining():
         num_batches = len(dataloader)
         
         for batch_idx, batch in enumerate(dataloader):
+            # Aggressive cache clearing
+            torch.cuda.empty_cache()
+            
             if batch is None:
                 continue
             # Move to device
@@ -210,17 +227,19 @@ def train_mae_pretraining():
         avg_loss = total_loss / max(1, len(dataloader))
         print(f"==> Epoch {epoch+1} Completed. Avg Loss: {avg_loss:.4f}")
         
-        # Save Checkpoint every epoch
+        # Save Checkpoint
         os.makedirs("checkpoints", exist_ok=True)
-        # Save latest (Encoder only as per config request, but for resuming we usually want optimizer too.
-        # keeping strictly to user request of 'pth files' for now, but saving encoder for next stages)
-        torch.save(model.encoder.state_dict(), save_path)
         
-        # Save epoch specific
-        epoch_save_path = save_path.replace(".pth", f"_epoch_{epoch+1}.pth")
-        torch.save(model.encoder.state_dict(), epoch_save_path)
-        print(f"Saved Checkpoint: {os.path.abspath(epoch_save_path)}")
-        print(f"Updated Latest: {os.path.abspath(save_path)}")
+        # Save latest (Overwrite previous to save space)
+        torch.save(model.encoder.state_dict(), save_path)
+        print(f"Updated Latest Checkpoint: {os.path.abspath(save_path)}")
+        
+        # Save Best
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            best_save_path = save_path.replace(".pth", "_best.pth")
+            torch.save(model.encoder.state_dict(), best_save_path)
+            print(f"New Best Model! Saved to: {os.path.abspath(best_save_path)}")
         
     # Save Encoder
     os.makedirs("checkpoints", exist_ok=True)

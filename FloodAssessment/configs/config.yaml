@@ -4,10 +4,10 @@ mae:
   task: "mae_pretraining"
   data:
     root: "data/processed/train"
-    voxel_size: 0.04
+    voxel_size: 0.1
     batch_size: 1
     num_workers: 2
-    max_points: 100000
+    max_points: 20000
   model:
     mask_ratio: 0.7
   training:

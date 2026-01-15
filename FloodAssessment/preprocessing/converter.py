@@ -54,49 +54,43 @@ def prepare_data_for_ptv3(path, voxel_size=0.04, max_points=None):
     # However, for pure inference, we might want to keep all points or just voxelize for the model
     # The model expects 'grid_coord'
     
-    # We shift coords to positive octant for simplicity in grid calculation usually
-    coord_min = points.min(0)
-    shifted_points = points - coord_min
+    # Optimization: Crop FIRST, then Voxelize.
+    # Voxelizing 100M points takes forever. Cropping to a 50m block first is fast.
     
-    unique_idx, _ = voxel_sample(shifted_points, voxel_size)
-    
-    # Random Block Sampling (Best for MAE & Transfer Learning)
-    # Preservation of local density is key for learning geometry.
-    if max_points is not None and len(unique_idx) > max_points:
-        # Get the voxelized points first to pick a center
-        voxel_points = points[unique_idx]
+    # 3. Random Block Crop (Applied on Raw Points)
+    if max_points is not None and len(points) > max_points:
+        # Pick random center
+        center_idx = np.random.randint(len(points))
+        center_point = points[center_idx]
         
-        # Pick a random center point
-        center_idx = np.random.randint(len(voxel_points))
-        center_point = voxel_points[center_idx]
-        
-        # Block size: Let's assume ~50m block for large scenes or just crop distinct number of points via KNN/Radius?
-        # Simpler: Just crop a box around center.
         block_size = 50.0 # meters
         
-        # Define mask
         min_box = center_point - block_size / 2
         max_box = center_point + block_size / 2
         
-        # Apply crop to the *sub-sampled* points (since we already voxelized)
-        # points[unique_idx] are the representative points
-        sub_p = points[unique_idx]
+        # Fast boolean mask on raw numpy array
+        mask = np.all((points >= min_box) & (points <= max_box), axis=1)
         
-        mask = np.all((sub_p >= min_box) & (sub_p <= max_box), axis=1)
-        crop_idx = unique_idx[mask]
-        
-        # If crop is still too big, random sample from it
-        if len(crop_idx) > max_points:
-             choice = np.random.choice(len(crop_idx), max_points, replace=False)
-             crop_idx = crop_idx[choice]
-        # If crop is too small (e.g. edge), we might want to pick another or just take what we have.
-        # Fallback: if we have too few points (< 10% of max), just revert to random sampling to ensure stability
-        elif len(crop_idx) < (max_points // 10):
-             choice = np.random.choice(len(unique_idx), max_points, replace=False)
-             crop_idx = unique_idx[choice]
+        # Safety: If crop is empty or too small, fallback to random sampling or just take original
+        if np.sum(mask) < 1000:
+             # Fallback: simple random indices
+             choice_idx = np.random.choice(len(points), min(len(points), max_points * 5), replace=False)
+             points = points[choice_idx]
+             features = features[choice_idx]
+        else:
+             points = points[mask]
+             features = features[mask]
              
-        unique_idx = crop_idx
+    # 4. Voxelization / Grid Sampling (Now on smaller subset)
+    coord_min = points.min(0)
+    shifted_points = points - coord_min
+    unique_idx, _ = voxel_sample(shifted_points, voxel_size)
     
+    # 5. Final max_points check (if voxelization didn't reduce enough)
+    if max_points is not None and len(unique_idx) > max_points:
+        choice = np.random.choice(len(unique_idx), max_points, replace=False)
+        unique_idx = unique_idx[choice]
+        
     sub_points = points[unique_idx]
     sub_feats = features[unique_idx]
     sub_grid_coords = np.round((sub_points - coord_min) / voxel_size).astype(np.int32)

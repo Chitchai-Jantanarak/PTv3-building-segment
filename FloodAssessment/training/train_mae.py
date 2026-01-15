@@ -198,21 +198,32 @@ def train_mae_pretraining():
             optimizer.zero_grad()
             
             # Forward
+            # Forward
             try:
-                reconstruction, mask = model(batch)
+                # Unpack new return values: Geometry, Color, Mask
+                pred_geo, pred_color, mask = model(batch)
             except AttributeError as e:
                  print(f"Forward pass error: {e}. Ensure PointTransformerV3 is returning a Point/Dict object.")
                  raise e
             
             # Loss Calculation (MSE on masked points)
-            target = batch['feat'] # Reconstructing features
-            
+            # MAE Pretraining usually reconstructs Features (Color) AND Geometry (XYZ)
+            target_geo = batch['coord'] 
+            # Assuming 'feat' contains [Type, R, G, B, I, R...] or similar.
+            # If dataset uses [X, Y, Z, R, G, B...], we need to be careful.
+            # PointDataset usually puts XYZ in 'coord' and Attributes in 'feat'.
+            # We assume first 3 channels of 'feat' are RGB for the color head.
+            target_color = batch['feat'][:, :3] 
+
             if mask is not None:
                 # Calculate loss only on masked points
-                # mask is (N,) bool
-                rec_loss = torch.nn.functional.mse_loss(reconstruction[mask], target[mask])
+                loss_g = torch.nn.functional.mse_loss(pred_geo[mask], target_geo[mask])
+                loss_c = torch.nn.functional.mse_loss(pred_color[mask], target_color[mask])
+                rec_loss = loss_g + loss_c
             else:
-                rec_loss = torch.nn.functional.mse_loss(reconstruction, target)
+                # Fallback if no mask (unlikely in training mode)
+                rec_loss = torch.nn.functional.mse_loss(pred_geo, target_geo) + \
+                           torch.nn.functional.mse_loss(pred_color, target_color)
                 
             rec_loss.backward()
             optimizer.step()

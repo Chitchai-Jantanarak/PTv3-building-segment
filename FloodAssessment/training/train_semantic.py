@@ -22,9 +22,8 @@ def train_semantic_pipeline():
     except:
         pass
         
-    # Seg-A Head (FEMA Classes + Background)
-    # FEMA 28 classes + others
-    seg_a = SegmentationHead(in_channels=512, num_classes=30).to(device)
+    # Seg-A Head (9 Classes as per standard mapping)
+    seg_a = SegmentationHead(in_channels=512, num_classes=9).to(device)
     
     # MLP Classifier
     # Takes geometric feature vector (32,)

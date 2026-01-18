@@ -72,11 +72,18 @@ def prepare_data_for_ptv3(path, voxel_size=0.04, max_points=None):
         mask = np.all((points >= min_box) & (points <= max_box), axis=1)
         
         # Safety: If crop is empty or too small, fallback to random sampling or just take original
+        # Safety: If crop is empty or too small, fallback to KNN (Keep legacy contiguous)
         if np.sum(mask) < 1000:
-             # Fallback: simple random indices
-             choice_idx = np.random.choice(len(points), min(len(points), max_points * 5), replace=False)
-             points = points[choice_idx]
-             features = features[choice_idx]
+             # Fallback: Take Nearest Neighbors to center to ensure a solid block
+             # (Avoids 'Sparse Dust' of 1500m extent which causes high loss)
+             dists = np.sum((points - center_point)**2, axis=1) # Squared dist
+             # Take closest 'max_points' (or more to survive voxelization)
+             target_k = min(len(points), max_points * 5 if max_points else 100000)
+             # Use argpartition for speed (instead of full sort)
+             near_idxs = np.argpartition(dists, target_k)[:target_k]
+             
+             points = points[near_idxs]
+             features = features[near_idxs]
         else:
              points = points[mask]
              features = features[mask]
@@ -100,8 +107,12 @@ def prepare_data_for_ptv3(path, voxel_size=0.04, max_points=None):
     offset = torch.IntTensor([len(sub_points)])
     
     # 5. Convert to Tensor
+    # Critical Fix: Return SHIFTED coordinates (local to block) to prevent float precision 
+    # and index overflow issues in the model.
+    shifted_sub_points = sub_points - coord_min
+    
     data_dict = {
-        'coord': torch.from_numpy(sub_points).float(),
+        'coord': torch.from_numpy(shifted_sub_points).float(),
         'feat': torch.from_numpy(sub_feats).float(),
         'grid_coord': torch.from_numpy(sub_grid_coords).int(),
         'offset': offset,

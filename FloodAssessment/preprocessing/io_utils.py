@@ -3,7 +3,68 @@ import logging
 import numpy as np
 import laspy
 import rasterio
+import h5py
 from plyfile import PlyData
+
+def read_h5(path):
+    """
+    Reads an H5 file. 
+    Tries to find 'data' or 'points' for coordinates, and 'label' for labels.
+    Returns dict with 'coord', 'feat', 'label' (if present).
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"File not found: {path}")
+        
+    try:
+        data = {}
+        with h5py.File(path, 'r') as f:
+            # automatic key detection
+            keys = list(f.keys())
+            
+            # Coordinates
+            if 'data' in keys:
+                raw_points = f['data'][:]
+            elif 'points' in keys:
+                raw_points = f['points'][:]
+            elif 'xyz' in keys:
+                raw_points = f['xyz'][:]
+            elif 'coords' in keys:
+                raw_points = f['coords'][:]
+            else:
+                raise ValueError(f"Could not find likely coordinate key in {keys}")
+                
+            # Check shape (N, 3) or (N, C)
+            # WHU-Urban3D often has (N, 3) or (N, 7)
+            if raw_points.shape[1] >= 3:
+                data['coord'] = raw_points[:, :3].astype(np.float32)
+                
+                # If extra channels exist in the main array, treat as features
+                if raw_points.shape[1] > 3:
+                    data['feat'] = raw_points[:, 3:].astype(np.float32)
+            else:
+                 raise ValueError(f"Point data shape {raw_points.shape} invalid (needed columns >= 3)")
+
+            # Labels
+            if 'label' in keys:
+                data['label'] = f['label'][:].astype(np.int64)
+            elif 'labels' in keys:
+                data['label'] = f['labels'][:].astype(np.int64)
+            elif 'semantics' in keys:
+                data['label'] = f['semantics'][:].astype(np.int64)
+            elif 'instances' in keys: 
+                # Optional: Use instances if semantic not available, or save as separate field?
+                # For now, just save it if found
+                data['instance'] = f['instances'][:].astype(np.int64)
+                
+            # Colors (if separate) or Intensity
+            if 'intensity' in keys:
+                data['intensity'] = f['intensity'][:].astype(np.float32)
+                
+        return data
+        
+    except Exception as e:
+        logging.error(f"Error reading H5 file {path}: {e}")
+        raise
 
 def read_ply(path, features=['red', 'green', 'blue']):
     """
@@ -57,6 +118,8 @@ def read_point_cloud(path):
         return read_las(path)
     elif ext in ['.ply']:
         return read_ply(path)
+    elif ext in ['.h5']:
+        return read_h5(path)
     else:
         raise ValueError(f"Unsupported file extension: {ext}")
 

@@ -1,9 +1,10 @@
 import yaml
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from .train_mae import PointDataset, collate_fn
+from training.train_mae import PointDataset, collate_fn
 from models.ptv3_encoder import SharedPTv3Encoder
 from models.heads import SegmentationHead
 from models.classifier_head import FEMAClassifier, GeometricFeatureExtractor
@@ -15,18 +16,55 @@ def train_semantic_pipeline():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Starting Stage 2: Semantic Training on {device}")
     
-    encoder = SharedPTv3Encoder().to(device)
-    # Load MAE Encoder as per requirement
+    # Dataloader
+    dataset = PointDataset(cfg['data']['root'], cfg['data']['voxel_size'])
+    dataloader = DataLoader(dataset, batch_size=cfg['data']['batch_size'], collate_fn=collate_fn)
+    
+    # Detect Input Dimension from first sample
     try:
-        encoder.load_state_dict(torch.load(cfg['model']['encoder_path'], map_location=device), strict=False)
-    except:
-        pass
+        sample_file = dataset.files[0]
+        sample_data = torch.load(sample_file)
+        input_dim = sample_data['feat'].shape[1]
+        print(f"Detected input feature dimension: {input_dim}")
+    except Exception as e:
+        print(f"Error detecting input dim, defaulting to 6: {e}")
+        input_dim = 6
+
+    encoder = SharedPTv3Encoder(input_channels=input_dim).to(device)
+    # Load MAE Encoder as per requirement
+    pretrained_path = cfg['model']['encoder_path']
+    try:
+        checkpoint = torch.load(pretrained_path, map_location=device)
+        # Adapt weights if channel mismatch exists (e.g. 3 vs 4)
+        model_state = encoder.state_dict()
+        
+        # Check stem weight shape
+        stem_key = "backbone.embedding.stem.conv.weight"
+        if stem_key in checkpoint and stem_key in model_state:
+            ckpt_w = checkpoint[stem_key]
+            curr_w = model_state[stem_key]
+            if ckpt_w.shape != curr_w.shape:
+                print(f"Adapting checkpoint stem weights from {ckpt_w.shape} to {curr_w.shape}")
+                c_in_ckpt = ckpt_w.shape[-1]
+                c_in_curr = curr_w.shape[-1]
+                new_w = curr_w.clone() 
+                min_c = min(c_in_ckpt, c_in_curr)
+                new_w[..., :min_c] = ckpt_w[..., :min_c]
+                checkpoint[stem_key] = new_w
+
+        encoder.load_state_dict(checkpoint, strict=False)
+        print(f"Loaded MAE Pretrained Encoder from {pretrained_path}")
+    except Exception as e:
+        print(f"Warning: Could not load pretrained encoder: {e}")
         
     # Seg-A Head (9 Classes as per standard mapping)
-    seg_a = SegmentationHead(in_channels=512, num_classes=9).to(device)
+    # Encoder output is 64 channels
+    seg_a = SegmentationHead(in_channels=64, num_classes=9).to(device)
     
     # MLP Classifier
-    # Takes geometric feature vector (32,)
+    # Takes geometric feature vector (32,) -> This seems specific to the extractor.
+    # But if we use deep features, we might want to change this.
+    # For now, keep standard as requested (GeometricFeatureExtractor uses raw points).
     classifier = FEMAClassifier(input_dim=32, num_classes=28).to(device)
     geo_extractor = GeometricFeatureExtractor()
     
@@ -34,12 +72,11 @@ def train_semantic_pipeline():
     criterion_seg = nn.CrossEntropyLoss()
     criterion_cls = nn.CrossEntropyLoss()
     
-    dataset = PointDataset(cfg['data']['root'])
-    dataloader = DataLoader(dataset, batch_size=cfg['data']['batch_size'], collate_fn=collate_fn)
-    
     for epoch in range(cfg['training']['epochs']):
         total_loss = 0
         for batch in dataloader:
+            if batch is None:
+                continue
             for k, v in batch.items():
                 if isinstance(v, torch.Tensor):
                     batch[k] = v.to(device)

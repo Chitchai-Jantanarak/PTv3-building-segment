@@ -48,7 +48,7 @@ else:
         sys.exit(1)
 
 class SharedPTv3Encoder(nn.Module):
-    def __init__(self, input_channels=6, enc_depths=(2, 2, 2, 6, 2), enc_channels=(32, 64, 128, 256, 512)):
+    def __init__(self, input_channels=3, enc_depths=(2, 2, 2, 6, 2), enc_channels=(32, 64, 128, 256, 512)):
         super().__init__()
         self.backbone = PointTransformerV3(
             in_channels=input_channels,

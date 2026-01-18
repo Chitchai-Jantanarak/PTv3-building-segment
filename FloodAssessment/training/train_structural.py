@@ -1,9 +1,10 @@
 import yaml
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from .train_mae import PointDataset, collate_fn
+from training.train_mae import PointDataset, collate_fn
 from models.ptv3_encoder import SharedPTv3Encoder
 from models.heads import SegmentationHead, InpaintHead
 
@@ -14,12 +15,52 @@ def train_structural_pipeline():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Starting Stage 1: Structural Training on {device}")
     
-    # Components
-    encoder = SharedPTv3Encoder()
-    # Load Pretrained MAE
+    # Dataloader
+    dataset = PointDataset(cfg['data']['root'], cfg['data']['voxel_size'])
+    dataloader = DataLoader(dataset, batch_size=cfg['data']['batch_size'], collate_fn=collate_fn, shuffle=True)
+    
+    # Detect Input Dimension from first sample
     try:
-        encoder.load_state_dict(torch.load(cfg['model']['pretrained_encoder'], map_location=device))
-        print("Loaded MAE Pretrained Encoder")
+        sample_file = dataset.files[0]
+        sample_data = torch.load(sample_file)
+        input_dim = sample_data['feat'].shape[1]
+        print(f"Detected input feature dimension: {input_dim}")
+    except Exception as e:
+        print(f"Error detecting input dim, defaulting to 6: {e}")
+        input_dim = 6
+
+    # Components
+    encoder = SharedPTv3Encoder(input_channels=input_dim)
+    # Load Pretrained MAE
+    pretrained_path = cfg['model']['pretrained_encoder']
+    try:
+        checkpoint = torch.load(pretrained_path, map_location=device)
+        # Adapt weights if channel mismatch exists (e.g. 3 vs 4)
+        model_state = encoder.state_dict()
+        
+        # Check stem weight shape
+        stem_key = "backbone.embedding.stem.conv.weight"
+        if stem_key in checkpoint and stem_key in model_state:
+            ckpt_w = checkpoint[stem_key]
+            curr_w = model_state[stem_key]
+            # Shape: [out, k, k, k, in] or [k,k,k,in,out]? 
+            # Spconv SubMConv3d weight is usually [k, k, k, in, out] 
+            # Error said: ckpt=[..., 3], curr=[..., 6]. Last dim mismatch.
+            
+            if ckpt_w.shape != curr_w.shape:
+                print(f"Adapting checkpoint stem weights from {ckpt_w.shape} to {curr_w.shape}")
+                # Assume last dim is input_channels
+                c_in_ckpt = ckpt_w.shape[-1]
+                c_in_curr = curr_w.shape[-1]
+                
+                new_w = curr_w.clone() # Keep random init for extra channels
+                min_c = min(c_in_ckpt, c_in_curr)
+                # Copy overlapping channels
+                new_w[..., :min_c] = ckpt_w[..., :min_c]
+                checkpoint[stem_key] = new_w
+        
+        encoder.load_state_dict(checkpoint, strict=False)
+        print(f"Loaded MAE Pretrained Encoder from {pretrained_path}")
     except FileNotFoundError:
         print("Warning: Pretrained encoder not found, starting from scratch")
         
@@ -29,8 +70,9 @@ def train_structural_pipeline():
             
     # Heads
     # Seg-B: Terrain(0), Building(1), Ignore(2)
-    seg_b = SegmentationHead(in_channels=512, num_classes=3).to(device)
-    inpaint = InpaintHead(in_channels=512).to(device)
+    # Encoder output dim check: 64 (from dec_channels[0])
+    seg_b = SegmentationHead(in_channels=64, num_classes=3).to(device)
+    inpaint = InpaintHead(in_channels=64).to(device)
     
     optimizer = optim.AdamW([
         {'params': seg_b.parameters()},
@@ -40,15 +82,13 @@ def train_structural_pipeline():
     criterion_seg = nn.CrossEntropyLoss(ignore_index=2)
     criterion_regr = nn.MSELoss()
     
-    # Dataloader
-    dataset = PointDataset(cfg['data']['root'], cfg['data']['voxel_size'])
-    dataloader = DataLoader(dataset, batch_size=cfg['data']['batch_size'], collate_fn=collate_fn, shuffle=True)
-    
     # Loop
     encoder.to(device)
     for epoch in range(cfg['training']['epochs']):
         total_loss = 0
         for batch in dataloader:
+            if batch is None:
+                continue
             for k, v in batch.items():
                 if isinstance(v, torch.Tensor):
                     batch[k] = v.to(device)

@@ -2,7 +2,6 @@ import sys
 import os
 
 # Force spconv to use simple algorithms (prevents crash on RTX 5090)
-# Force spconv to use simple algorithms (prevents crash on RTX 5090)
 os.environ["SPCONV_ALGO"] = "native"
 # Mitigate OOM fragmentation
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
@@ -64,6 +63,38 @@ class PointDataset(Dataset):
                    torch.isnan(data_dict['feat']).any() or torch.isinf(data_dict['feat']).any():
                     print(f"Warning: Corrupt data (NaN/Inf) found in {path}. Skipping.")
                     return None
+                
+                # FORCE NORMALIZATION (The "Nuclear Option" for stability)
+                # Always shift to local coordinates [0, ...] to prevent negative grids
+                min_val = data_dict['coord'].min(0)[0]
+                data_dict['coord'] = data_dict['coord'] - min_val
+                
+                # FIX 2: Spatial Cropping (Prevent SpConv Int32 Overflow)
+                # If extent is too large (e.g. > 50m with 0.04m voxel), indices get massive.
+                # We simply crop a 50m block centered on a random point.
+                if data_dict['coord'].max() > 50.0:
+                    # Pick a random center
+                    center_idx = torch.randint(0, len(data_dict['coord']), (1,))
+                    center = data_dict['coord'][center_idx].view(1, 3)
+                    
+                    # Define box (e.g. +/- 25m)
+                    mask = (data_dict['coord'][:, 0] > center[:, 0] - 25.0) & \
+                           (data_dict['coord'][:, 0] < center[:, 0] + 25.0) & \
+                           (data_dict['coord'][:, 1] > center[:, 1] - 25.0) & \
+                           (data_dict['coord'][:, 1] < center[:, 1] + 25.0)
+                           # Z-axis usually fine to keep full
+                    
+                    if mask.sum() > 1024: # Ensure we have points
+                        data_dict['coord'] = data_dict['coord'][mask]
+                        data_dict['feat'] = data_dict['feat'][mask]
+                        # Re-normalize after crop to be safe 0-based
+                        data_dict['coord'] = data_dict['coord'] - data_dict['coord'].min(0)[0]
+                
+                # Always regenerate grid_coord to match
+                # This guarantees consistency and 0-based indices
+                data_dict['grid_coord'] = (data_dict['coord'] / self.voxel_size).int()
+
+
                     
                 # Ensure compatibility if max_points is set
                 if self.max_points and len(data_dict['coord']) > self.max_points:
@@ -180,6 +211,9 @@ def train_mae_pretraining():
     model.train()
     print(f"Detailed logs will be printed every 10 batches.")
     
+    # DEBUG: Anomaly Detection OFF (Culprit Found: FlashAttn)
+    # torch.autograd.set_detect_anomaly(True)
+    
     for epoch in range(start_epoch, cfg['training']['epochs']):
         total_loss = 0
         num_batches = len(dataloader)
@@ -191,29 +225,46 @@ def train_mae_pretraining():
             if batch is None:
                 continue
             # Move to device
-            for k, v in batch.items():
-                if isinstance(v, torch.Tensor):
-                    batch[k] = v.to(device)
-            
+            input_dict = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+        
+            # --- Runtime Data Guard (Added to prevent CUDA Asserts) ---
+            if input_dict['coord'].abs().max() > 2000:
+                print(f"WARNING: Skipping batch with extreme coordinates (Max: {input_dict['coord'].abs().max()}). Potential outlier in data.")
+                continue
+            if torch.isnan(input_dict['coord']).any() or torch.isinf(input_dict['coord']).any():
+                print("WARNING: Skipping batch with NaN/Inf coordinates.")
+                continue
+            if (input_dict['grid_coord'] < 0).any():
+                print("WARNING: Skipping batch with Negative grid_coord. Potential integer overflow or bad offset.")
+                continue
+            # -------------------------------------------------------------
+
+            # DEBUG TRAP: Print stats before forward
+            # print(f"DEBUG Batch {batch_idx}: Grid Min={input_dict['grid_coord'].min()}, Max={input_dict['grid_coord'].max()}")
+            # print(f"DEBUG Batch {batch_idx}: Coord Min={input_dict['coord'].min()}, Max={input_dict['coord'].max()}")
+
             optimizer.zero_grad()
             
             # Forward
-            # Forward
             try:
                 # Unpack new return values: Geometry, Color, Mask
-                pred_geo, pred_color, mask = model(batch)
+                pred_geo, pred_color, mask = model(input_dict)
             except AttributeError as e:
                  print(f"Forward pass error: {e}. Ensure PointTransformerV3 is returning a Point/Dict object.")
                  raise e
+            except Exception as e:
+                 print(f"General Forward Error: {e}")
+                 # Dump crash data
+                 torch.save(input_dict, "crash_input.pth")
+                 raise e
+
             
             # Loss Calculation (MSE on masked points)
             # MAE Pretraining usually reconstructs Features (Color) AND Geometry (XYZ)
-            target_geo = batch['coord'] 
-            # Assuming 'feat' contains [Type, R, G, B, I, R...] or similar.
-            # If dataset uses [X, Y, Z, R, G, B...], we need to be careful.
-            # PointDataset usually puts XYZ in 'coord' and Attributes in 'feat'.
-            # We assume first 3 channels of 'feat' are RGB for the color head.
-            target_color = batch['feat'][:, :3] 
+            target_geo = input_dict['coord'] 
+            # Use all available features (RGB, Intensity, etc.) as target
+            target_color = input_dict['feat'] 
+
 
             if mask is not None:
                 # Calculate loss only on masked points

@@ -20,7 +20,7 @@ class MAEDecoder(nn.Module):
         self.color_head = nn.Sequential(
             nn.Linear(enc_channels, 256),
             nn.GELU(),
-            nn.Linear(256, 3) # RGB (normalized 0-1)
+            nn.Linear(256, target_channels) # RGB + I (Dynamic)
         )
 
     def mask_points(self, data_dict):

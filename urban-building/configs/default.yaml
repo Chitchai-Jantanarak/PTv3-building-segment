@@ -1,0 +1,18 @@
+run:
+  seed: 42
+  device: cuda
+  precision: fp32
+  deterministic: true
+
+paths:
+  data_root: data
+  ckpt_root: checkpoints
+  log_root: logs
+
+runtime:
+  clear_cuda_cache_each_epoch: true
+  log_memory_each_epoch: true
+
+hydra:
+  run:
+    dir: ${paths.log_root}/${task.name}/${now:%Y-%m-%d_%H-%M-%S}

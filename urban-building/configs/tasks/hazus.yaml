@@ -1,0 +1,6 @@
+- task:
+    name: hazus
+    module: src.train.hazus
+    requires:
+      - seg_a
+      - seg_b_geom

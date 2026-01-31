@@ -1,0 +1,9 @@
+name: las
+type: las
+root: ${paths.data_root}/raw/las
+features:
+  xyz: true
+  intensity: optional
+  rgb: optional
+  relz: true
+labels: null

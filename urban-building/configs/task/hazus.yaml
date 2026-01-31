@@ -1,0 +1,24 @@
+name: hazus
+stage: 3
+model: hazus
+input: clusters
+
+features:
+  - geometry_stats
+  - mae_reconstruction_error
+
+loss:
+  type: cross_entropy
+
+optimizer:
+  type: adamw
+  lr: 1e-3
+  weight_decay: 0.01
+
+scheduler:
+  type: step
+  step_size: 20
+  gamma: 0.5
+
+epochs: 50
+batch_size: 32

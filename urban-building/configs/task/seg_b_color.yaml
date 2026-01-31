@@ -1,0 +1,24 @@
+name: seg_b_color
+stage: 2
+model: seg_b_color
+freeze_encoder: false
+input_filter: building_only
+requires: seg_b_geom
+
+loss:
+  type: combined
+  weights:
+    geom: 0.7
+    color: 0.3
+
+optimizer:
+  type: adamw
+  lr: 1e-4
+  weight_decay: 0.05
+
+scheduler:
+  type: cosine
+  warmup_epochs: 5
+
+epochs: 100
+batch_size: 4

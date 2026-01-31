@@ -1,0 +1,24 @@
+name: seg_a
+stage: 1
+model: seg_a
+freeze_encoder: true
+
+pseudo_labels:
+  height_threshold: 2.0
+  planarity_threshold: 0.8
+
+loss:
+  type: focal
+  gamma: 2.0
+
+optimizer:
+  type: adamw
+  lr: 5e-5
+  weight_decay: 0.01
+
+scheduler:
+  type: cosine
+  warmup_epochs: 5
+
+epochs: 100
+batch_size: 8

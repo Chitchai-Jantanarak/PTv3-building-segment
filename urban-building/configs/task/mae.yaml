@@ -1,0 +1,25 @@
+name: mae
+stage: 0
+model: mae
+freeze_encoder: false
+
+masking:
+  type: block
+  ratio: 0.75
+  block_size: 64
+
+loss:
+  type: mse
+  target: xyz_relz
+
+optimizer:
+  type: adamw
+  lr: 1e-4
+  weight_decay: 0.05
+
+scheduler:
+  type: cosine
+  warmup_epochs: 10
+
+epochs: 300
+batch_size: 8

@@ -1,0 +1,17 @@
+name: sansat
+type: ply
+root: ${paths.data_root}/raw/sansat
+features:
+  xyz: true
+  intensity: false
+  rgb: true
+  relz: true
+labels:
+  ground: 0
+  vegetation: 1
+  building: 2
+  wall: 3
+  parking: 5
+  traffic: 7
+  street: 8
+  car: 9

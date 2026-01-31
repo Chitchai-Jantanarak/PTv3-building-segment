@@ -1,0 +1,21 @@
+name: whu
+type: h5
+root: ${paths.data_root}/raw/whu
+subset: als
+features:
+  xyz: true
+  intensity: true
+  rgb: false
+  relz: true
+labels:
+  building: 102000
+  architecture: 102100
+  ground: 100300
+  drive_road: 100100
+  non_drive_road: 100400
+  tree: 102400
+  vegetation: 102600
+  low_vegetation: 104202
+  fence: 105800
+  pedestrian: 100500
+  vehicle: 100600

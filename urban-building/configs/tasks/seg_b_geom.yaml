@@ -1,8 +1,0 @@
-task:
-  name: seg_b_geom
-  module: src.tasks.seg_b_geom
-
-training:
-  epochs: 100
-  lr: 5e-4
-  batch_size: 32

@@ -1,0 +1,6 @@
+__pycache__
+
+data/processed/sansat/*
+data/processed/whu/*
+data/raw/sansat/*
+data/raw/whu/*

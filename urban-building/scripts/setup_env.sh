@@ -21,6 +21,9 @@ if ! command -v uv &> /dev/null; then
 fi
 
 echo "[INFO] Creating conda environment: ${ENV_NAME}"
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || true
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
+
 conda create -n ${ENV_NAME} python=${PYTHON_VERSION} -y
 
 echo "[INFO] Activating environment..."
@@ -28,7 +31,7 @@ eval "$(conda shell.bash hook)"
 conda activate ${ENV_NAME}
 
 echo "[INFO] Installing PyTorch with CUDA ${CUDA_VERSION} (conda only for CUDA base)..."
-conda install pytorch=2.1.0 pytorch-cuda=${CUDA_VERSION} -c pytorch -c nvidia -y
+conda install pytorch=2.1.0 torchvision=0.16.0 pytorch-cuda=${CUDA_VERSION} mkl=2023 -c pytorch -c nvidia -y
 
 echo "[INFO] Creating .venv symlink to conda env..."
 CONDA_ENV_PATH=$(conda info --envs | grep ${ENV_NAME} | awk '{print $NF}')

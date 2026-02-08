@@ -1,7 +1,7 @@
 # src/infer/export.py
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -58,7 +58,7 @@ def export_ply(
 
 def export_csv(
     path: Union[str, Path],
-    data: List[Dict[str, Any]],
+    data: list[dict[str, Any]],
 ) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

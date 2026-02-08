@@ -5,7 +5,7 @@ from omegaconf import DictConfig
 
 from src.core.utils import get_logger, set_seed
 from src.datasets import build_dataloader, build_dataset
-from src.losses import chamfer_loss, point_mse_loss
+from src.losses import point_mse_loss
 from src.models.seg_heads import AnomalyMasking, SegBv2Model
 from src.train._base import build_optimizer, build_scheduler, train_loop
 

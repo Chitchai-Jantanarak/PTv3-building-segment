@@ -1,6 +1,6 @@
 # src/infer/hazus.py
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 import torch
 import torch.nn as nn
@@ -14,7 +14,7 @@ class HazusInference(InferenceEngine):
     def _build_model(self) -> nn.Module:
         return HazusModel(self.cfg)
 
-    def predict(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def predict(self, data: dict[str, Any]) -> dict[str, Any]:
         data = prepare_input(data, self.device)
 
         xyz = data["coords"]
@@ -34,7 +34,7 @@ class HazusInference(InferenceEngine):
 
     def predict_single(
         self, xyz: torch.Tensor, mae_error: Optional[torch.Tensor] = None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         xyz = xyz.to(self.device)
         if mae_error is not None:
             mae_error = mae_error.to(self.device)
@@ -55,7 +55,6 @@ def run_hazus_inference(
     output_path: Union[str, Path],
     checkpoint_path: Union[str, Path],
 ) -> None:
-    import pandas as pd
     from sklearn.cluster import DBSCAN
 
     from src.core.io import read_las, read_ply

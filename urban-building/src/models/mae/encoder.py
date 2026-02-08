@@ -1,5 +1,5 @@
 # src/models/mae/encoder.py
-from typing import Dict, Optional
+from typing import Optional
 
 import torch.nn as nn
 from omegaconf import DictConfig

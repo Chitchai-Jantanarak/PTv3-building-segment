@@ -1,5 +1,4 @@
 # src/models/mae/decoder.py
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -36,7 +35,6 @@ class MAEDecoder(nn.Module):
         masked_indices: Tensor,
         n_total: int,
     ) -> Tensor:
-        device = encoded.device
 
         full_features = self.mask_token.expand(n_total, -1).clone()
         full_features[visible_indices] = encoded
@@ -83,7 +81,6 @@ class TransformerDecoder(nn.Module):
         masked_indices: Tensor,
         n_total: int,
     ) -> Tensor:
-        device = encoded.device
 
         full_features = self.mask_token.expand(n_total, -1).clone()
         full_features[visible_indices] = encoded

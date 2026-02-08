@@ -1,5 +1,4 @@
 # src/models/hazus_head/rules.py
-from typing import Dict, List, Optional
 
 import torch
 from torch import Tensor
@@ -54,10 +53,10 @@ class FEMAConstraints:
         self,
         height: float,
         area: float,
-    ) -> List[str]:
+    ) -> list[str]:
         valid = []
 
-        for btype in self.height_limits.keys():
+        for btype in self.height_limits:
             if self.validate(btype, height, area):
                 valid.append(btype)
 
@@ -70,7 +69,7 @@ def apply_height_rules(
 ) -> Tensor:
     height = features[:, height_idx]
 
-    low_rise = (height >= 0) & (height < 20)
+    (height >= 0) & (height < 20)
     mid_rise = (height >= 20) & (height < 50)
     high_rise = height >= 50
 

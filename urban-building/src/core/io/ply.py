@@ -1,6 +1,6 @@
 # src/core/io/ply.py
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 from plyfile import PlyData, PlyElement
@@ -9,7 +9,7 @@ from plyfile import PlyData, PlyElement
 def read_ply(
     path: Union[str, Path],
     fields: Optional[list] = None,
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     path = Path(path)
     ply = PlyData.read(path)
     vertex = ply["vertex"]

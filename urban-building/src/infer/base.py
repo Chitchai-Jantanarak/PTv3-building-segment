@@ -1,13 +1,13 @@
 # src/infer/base.py
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Union
 
 import torch
 import torch.nn as nn
 from omegaconf import DictConfig
 
-from src.core.utils import Logger, get_logger, load_ckpt
+from src.core.utils import get_logger, load_ckpt
 
 
 class InferenceEngine(ABC):
@@ -39,18 +39,18 @@ class InferenceEngine(ABC):
         self.logger.info(f"Loaded checkpoint: {path}")
 
     @abstractmethod
-    def predict(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def predict(self, data: dict[str, Any]) -> dict[str, Any]:
         pass
 
     @torch.no_grad()
-    def __call__(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def __call__(self, data: dict[str, Any]) -> dict[str, Any]:
         return self.predict(data)
 
 
 def prepare_input(
-    data: Dict[str, Any],
+    data: dict[str, Any],
     device: torch.device,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     result = {}
 
     for key, value in data.items():

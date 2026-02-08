@@ -1,10 +1,10 @@
 # src/core/utils/memory.py
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 
 
-def get_gpu_memory() -> Dict[str, float]:
+def get_gpu_memory() -> dict[str, float]:
     if not torch.cuda.is_available():
         return {"allocated": 0.0, "reserved": 0.0, "total": 0.0}
 

@@ -13,10 +13,10 @@ Usage:
 
 import logging
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Union
 
 import torch
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from torch.utils.data import DataLoader, Dataset
 
 from .base import BasePointCloudDataset, SimplePointCloudDataset, collate_fn
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # Dataset Registry
 # =============================================================================
 
-DATASET_REGISTRY: Dict[str, type] = {}
+DATASET_REGISTRY: dict[str, type] = {}
 
 
 def register_dataset(name: str):
@@ -91,7 +91,7 @@ class SensatUrbanDataset(BasePointCloudDataset):
     NUM_CLASSES = 13
     BUILDING_CLASS = 2
 
-    def _load_file_list(self) -> List[Path]:
+    def _load_file_list(self) -> list[Path]:
         """Load SensatUrban data files."""
         # Try split directory first
         split_dir = self.root / self.split
@@ -111,7 +111,7 @@ class SensatUrbanDataset(BasePointCloudDataset):
 
     def _get_class_info(
         self,
-    ) -> Tuple[Optional[Dict[int, str]], Optional[Dict[int, int]]]:
+    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
         return self.CLASSES, None
 
 
@@ -150,7 +150,7 @@ class WHUDataset(BasePointCloudDataset):
         self.use_simplified = use_simplified
         super().__init__(root=root, **kwargs)
 
-    def _load_file_list(self) -> List[Path]:
+    def _load_file_list(self) -> list[Path]:
         """Load WHU data files for specified mode."""
         # Try mode-specific directory
         mode_dir = self.root / self.mode / self.split
@@ -164,7 +164,7 @@ class WHUDataset(BasePointCloudDataset):
 
     def _get_class_info(
         self,
-    ) -> Tuple[Optional[Dict[int, str]], Optional[Dict[int, int]]]:
+    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
         if self.use_simplified:
             return self.SIMPLIFIED_CLASSES, None
         return None, None
@@ -179,7 +179,7 @@ class LASDataset(BasePointCloudDataset):
     Typically used for inference pipeline.
     """
 
-    def _load_file_list(self) -> List[Path]:
+    def _load_file_list(self) -> list[Path]:
         """Load LAS data files."""
         las_dir = self.root / "las" / self.split
         if not las_dir.exists():
@@ -192,7 +192,7 @@ class LASDataset(BasePointCloudDataset):
 
     def _get_class_info(
         self,
-    ) -> Tuple[Optional[Dict[int, str]], Optional[Dict[int, int]]]:
+    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
         return None, None
 
 
@@ -224,7 +224,7 @@ class MAEDataset(BasePointCloudDataset):
         kwargs["ignore_index"] = -1
         super().__init__(root=root, **kwargs)
 
-    def _load_file_list(self) -> List[Path]:
+    def _load_file_list(self) -> list[Path]:
         """Load files for MAE training (uses all available data)."""
         # MAE can use all data regardless of labels
         all_files = []
@@ -236,10 +236,10 @@ class MAEDataset(BasePointCloudDataset):
 
     def _get_class_info(
         self,
-    ) -> Tuple[Optional[Dict[int, str]], Optional[Dict[int, int]]]:
+    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
         return None, None
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         """Get sample with masking applied."""
         data = super().__getitem__(idx)
 
@@ -278,7 +278,7 @@ class SegADataset(BasePointCloudDataset):
 
         super().__init__(root=root, **kwargs)
 
-    def _load_file_list(self) -> List[Path]:
+    def _load_file_list(self) -> list[Path]:
         """Load files for segmentation."""
         split_dir = self.root / self.split
         if not split_dir.exists():
@@ -290,7 +290,7 @@ class SegADataset(BasePointCloudDataset):
 
     def _get_class_info(
         self,
-    ) -> Tuple[Optional[Dict[int, str]], Optional[Dict[int, int]]]:
+    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
         return self._class_names, None
 
 
@@ -320,7 +320,7 @@ class SegBDataset(BasePointCloudDataset):
         self.include_color = include_color
         super().__init__(root=root, **kwargs)
 
-    def _load_file_list(self) -> List[Path]:
+    def _load_file_list(self) -> list[Path]:
         """Load files for building inpainting."""
         split_dir = self.root / self.split
         if not split_dir.exists():
@@ -334,10 +334,10 @@ class SegBDataset(BasePointCloudDataset):
 
     def _get_class_info(
         self,
-    ) -> Tuple[Optional[Dict[int, str]], Optional[Dict[int, int]]]:
+    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
         return None, None
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         """Get sample with building filtering and masking."""
         data = super().__getitem__(idx)
 
@@ -355,7 +355,7 @@ class SegBDataset(BasePointCloudDataset):
 
         return data
 
-    def _apply_masking(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def _apply_masking(self, data: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Apply structured masking for inpainting."""
         coords = data["coords"]
         points = data["points"]
@@ -470,7 +470,7 @@ class FEMADataset(Dataset):
             f"Initialized FEMADataset with {len(self.samples)} building samples"
         )
 
-    def _load_samples(self) -> List[Dict[str, Any]]:
+    def _load_samples(self) -> list[dict[str, Any]]:
         """Load pre-extracted building feature samples."""
         samples = []
 
@@ -499,7 +499,7 @@ class FEMADataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         """Get a building sample."""
         sample = self.samples[idx]
 
@@ -679,7 +679,7 @@ def build_dataloader(
 # =============================================================================
 
 
-def get_available_datasets() -> List[str]:
+def get_available_datasets() -> list[str]:
     """Get list of registered dataset names."""
     return list(DATASET_REGISTRY.keys())
 

@@ -1,5 +1,5 @@
 # src/core/preprocessing/voxel.py
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 import numpy as np
 
@@ -10,7 +10,7 @@ def voxelize(
     features: Optional[np.ndarray] = None,
     labels: Optional[np.ndarray] = None,
     mode: str = "random",
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     voxel_coords = np.floor(xyz / voxel_size).astype(np.int32)
 
     voxel_coords_min = voxel_coords.min(axis=0)
@@ -54,15 +54,17 @@ def _sample_random(
     inverse: np.ndarray,
     counts: np.ndarray,
 ) -> np.ndarray:
-    n_voxels = len(unique_ids)
-    sampled = np.zeros(n_voxels, dtype=np.int64)
+    # Sort point indices by voxel assignment: O(n log n)
+    order = np.argsort(inverse, kind="mergesort")
 
-    for i, uid in enumerate(unique_ids):
-        mask = inverse == i
-        indices = np.where(mask)[0]
-        sampled[i] = np.random.choice(indices)
+    # Cumulative offsets mark where each voxel's points start
+    offsets = np.empty(len(counts) + 1, dtype=np.int64)
+    offsets[0] = 0
+    np.cumsum(counts, out=offsets[1:])
 
-    return sampled
+    # Pick a random offset within each voxel group (vectorized, no loop)
+    rand_offsets = (np.random.random(len(counts)) * counts).astype(np.int64)
+    return order[offsets[:-1] + rand_offsets]
 
 
 def _sample_center(
@@ -72,17 +74,26 @@ def _sample_center(
     voxel_size: float,
 ) -> np.ndarray:
     n_voxels = len(unique_ids)
-    sampled = np.zeros(n_voxels, dtype=np.int64)
 
-    for i, uid in enumerate(unique_ids):
-        mask = inverse == i
-        indices = np.where(mask)[0]
-        points = xyz[indices]
-        center = points.mean(axis=0)
-        dists = np.linalg.norm(points - center, axis=1)
-        sampled[i] = indices[np.argmin(dists)]
+    # Compute voxel centers via scatter-add: O(n)
+    centers = np.zeros((n_voxels, 3), dtype=np.float64)
+    np.add.at(centers, inverse, xyz)
+    counts = np.bincount(inverse, minlength=n_voxels)
+    centers /= counts[:, None]
 
-    return sampled
+    # Distance from each point to its voxel center: O(n)
+    dists = np.linalg.norm(xyz - centers[inverse], axis=1)
+
+    # Sort by (voxel_id, distance) so closest-to-center comes first: O(n log n)
+    order = np.lexsort((dists, inverse))
+    sorted_inverse = inverse[order]
+
+    # First occurrence per voxel in sorted order = closest to center: O(n)
+    first_mask = np.empty(len(sorted_inverse), dtype=bool)
+    first_mask[0] = True
+    first_mask[1:] = sorted_inverse[1:] != sorted_inverse[:-1]
+
+    return order[first_mask]
 
 
 def compute_grid_coords(

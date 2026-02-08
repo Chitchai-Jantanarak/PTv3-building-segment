@@ -1,6 +1,6 @@
 # src/infer/seg_b.py
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Union
 
 import torch
 import torch.nn as nn
@@ -14,7 +14,7 @@ class SegBGeomInference(InferenceEngine):
     def _build_model(self) -> nn.Module:
         return SegBGeomModel(self.cfg)
 
-    def predict(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def predict(self, data: dict[str, Any]) -> dict[str, Any]:
         data = prepare_input(data, self.device)
 
         feat = data["features"]
@@ -36,7 +36,7 @@ class SegBColorInference(InferenceEngine):
     def _build_model(self) -> nn.Module:
         return SegBColorModel(self.cfg)
 
-    def predict(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def predict(self, data: dict[str, Any]) -> dict[str, Any]:
         data = prepare_input(data, self.device)
 
         feat = data["features"]

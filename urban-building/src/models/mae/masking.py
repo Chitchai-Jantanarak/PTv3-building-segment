@@ -1,5 +1,4 @@
 # src/models/mae/masking.py
-from typing import Tuple
 
 import torch
 from torch import Tensor
@@ -18,7 +17,7 @@ class BlockMasking:
         self,
         coord: Tensor,
         batch: Tensor,
-    ) -> Tuple[Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor]:
         device = coord.device
         unique_batches = torch.unique(batch)
 
@@ -28,7 +27,7 @@ class BlockMasking:
         for b in unique_batches:
             batch_mask = batch == b
             batch_coord = coord[batch_mask]
-            n_points = batch_coord.shape[0]
+            batch_coord.shape[0]
 
             block_ids = self._assign_blocks(batch_coord)
             unique_blocks = torch.unique(block_ids)
@@ -74,7 +73,7 @@ def random_masking(
     n_points: int,
     ratio: float,
     device: torch.device,
-) -> Tuple[Tensor, Tensor]:
+) -> tuple[Tensor, Tensor]:
     n_masked = int(n_points * ratio)
     perm = torch.randperm(n_points, device=device)
     masked_indices = perm[:n_masked]

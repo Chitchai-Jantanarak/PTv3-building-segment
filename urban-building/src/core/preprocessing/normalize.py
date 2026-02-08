@@ -1,5 +1,5 @@
 # src/core/preprocessing/normalize.py
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 
@@ -8,7 +8,7 @@ def normalize_xyz(
     xyz: np.ndarray,
     center: Optional[np.ndarray] = None,
     scale: Optional[float] = None,
-) -> Tuple[np.ndarray, np.ndarray, float]:
+) -> tuple[np.ndarray, np.ndarray, float]:
     if center is None:
         center = xyz.mean(axis=0)
 
@@ -35,7 +35,7 @@ def denormalize_xyz(
 def normalize_features(
     features: np.ndarray,
     method: str = "minmax",
-) -> Tuple[np.ndarray, dict]:
+) -> tuple[np.ndarray, dict]:
     if method == "minmax":
         fmin = features.min(axis=0)
         fmax = features.max(axis=0)

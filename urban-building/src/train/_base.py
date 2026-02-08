@@ -1,6 +1,6 @@
 # src/train/_base.py
 from pathlib import Path
-from typing import Callable, Dict, Optional
+from typing import Callable, Optional
 
 import torch
 import torch.nn as nn

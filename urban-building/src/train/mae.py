@@ -1,7 +1,5 @@
 # src/train/mae.py
-import torch
 from omegaconf import DictConfig
-from torch.utils.data import DataLoader
 
 from src.core.utils import get_logger, set_seed
 from src.datasets import build_dataloader, build_dataset

@@ -13,7 +13,7 @@ All task-specific datasets should inherit from this class.
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Union
 
 import numpy as np
 import torch
@@ -38,7 +38,7 @@ class BasePointCloudDataset(Dataset, ABC):
         voxel_size: float = 0.04,
         max_points: Optional[int] = None,
         transform: Optional[Callable] = None,
-        feature_names: Optional[List[str]] = None,
+        feature_names: Optional[list[str]] = None,
         ignore_index: int = -1,
         cache_data: bool = False,
     ):
@@ -65,7 +65,7 @@ class BasePointCloudDataset(Dataset, ABC):
         self.cache_data = cache_data
 
         # Data cache
-        self._cache: Dict[int, Dict[str, Any]] = {}
+        self._cache: dict[int, dict[str, Any]] = {}
 
         # Load file list
         self.file_list = self._load_file_list()
@@ -83,7 +83,7 @@ class BasePointCloudDataset(Dataset, ABC):
         )
 
     @abstractmethod
-    def _load_file_list(self) -> List[Path]:
+    def _load_file_list(self) -> list[Path]:
         """
         Load list of data files for the current split.
 
@@ -95,7 +95,7 @@ class BasePointCloudDataset(Dataset, ABC):
     @abstractmethod
     def _get_class_info(
         self,
-    ) -> Tuple[Optional[Dict[int, str]], Optional[Dict[int, int]]]:
+    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
         """
         Get class names and optional label mapping.
 
@@ -108,7 +108,7 @@ class BasePointCloudDataset(Dataset, ABC):
     def __len__(self) -> int:
         return len(self.file_list)
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         """
         Get a single sample.
 
@@ -153,7 +153,7 @@ class BasePointCloudDataset(Dataset, ABC):
 
         return data
 
-    def _load_sample(self, file_path: Path) -> Dict[str, np.ndarray]:
+    def _load_sample(self, file_path: Path) -> dict[str, np.ndarray]:
         """
         Load a single sample from file.
 
@@ -202,7 +202,7 @@ class BasePointCloudDataset(Dataset, ABC):
 
         return data
 
-    def _voxelize(self, data: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    def _voxelize(self, data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """
         Apply voxelization to the sample.
 
@@ -253,8 +253,8 @@ class BasePointCloudDataset(Dataset, ABC):
         return data
 
     def _random_sample(
-        self, data: Dict[str, np.ndarray], num_points: int
-    ) -> Dict[str, np.ndarray]:
+        self, data: dict[str, np.ndarray], num_points: int
+    ) -> dict[str, np.ndarray]:
         """
         Randomly sample points from the data.
 
@@ -284,7 +284,7 @@ class BasePointCloudDataset(Dataset, ABC):
 
         return data
 
-    def _to_tensors(self, data: Dict[str, np.ndarray]) -> Dict[str, torch.Tensor]:
+    def _to_tensors(self, data: dict[str, np.ndarray]) -> dict[str, torch.Tensor]:
         """
         Convert numpy arrays to PyTorch tensors.
 
@@ -364,7 +364,7 @@ class BasePointCloudDataset(Dataset, ABC):
         """Clear the data cache."""
         self._cache.clear()
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """
         Get dataset statistics.
 
@@ -398,7 +398,7 @@ class SimplePointCloudDataset(BasePointCloudDataset):
         root: Union[str, Path],
         split: str = "train",
         num_classes: int = 0,
-        class_names: Optional[Dict[int, str]] = None,
+        class_names: Optional[dict[int, str]] = None,
         **kwargs,
     ):
         """
@@ -413,7 +413,7 @@ class SimplePointCloudDataset(BasePointCloudDataset):
         self._class_names = class_names
         super().__init__(root=root, split=split, **kwargs)
 
-    def _load_file_list(self) -> List[Path]:
+    def _load_file_list(self) -> list[Path]:
         """Load all .pth files from the split directory."""
         split_dir = self.root / self.split
 
@@ -426,12 +426,12 @@ class SimplePointCloudDataset(BasePointCloudDataset):
 
     def _get_class_info(
         self,
-    ) -> Tuple[Optional[Dict[int, str]], Optional[Dict[int, int]]]:
+    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
         """Return class info passed to constructor."""
         return self._class_names, None
 
 
-def collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+def collate_fn(batch: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
     """
     Custom collate function for point cloud batches.
 

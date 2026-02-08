@@ -1,6 +1,5 @@
 # src/train/seg_b_color.py
 import torch
-import torch.nn.functional as F
 from omegaconf import DictConfig
 
 from src.core.utils import get_logger, set_seed

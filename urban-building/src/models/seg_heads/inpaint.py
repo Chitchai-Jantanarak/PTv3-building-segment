@@ -1,5 +1,5 @@
 # src/models/seg_heads/inpaint.py
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -70,7 +70,7 @@ class SegBGeomModel(nn.Module):
         coord: Tensor,
         batch: Optional[Tensor] = None,
         mask: Optional[Tensor] = None,
-    ) -> Dict[str, Tensor]:
+    ) -> dict[str, Tensor]:
         encoded = self.encoder(feat, coord, batch)
         xyz_pred = self.geom_head(encoded)
 
@@ -107,7 +107,7 @@ class SegBColorModel(nn.Module):
         coord: Tensor,
         batch: Optional[Tensor] = None,
         mask: Optional[Tensor] = None,
-    ) -> Dict[str, Tensor]:
+    ) -> dict[str, Tensor]:
         encoded = self.encoder(feat, coord, batch)
         xyz_pred = self.geom_head(encoded)
         rgb_pred = self.color_head(encoded)
@@ -152,7 +152,7 @@ class SegBv2Model(nn.Module):
         feat: Tensor,
         coord: Tensor,
         batch: Optional[Tensor] = None,
-    ) -> Dict[str, Tensor]:
+    ) -> dict[str, Tensor]:
         encoded = self.encoder(feat, coord, batch)
         xyzr_pred = self.geom_head(encoded)
         rgb_pred = self.color_head(encoded)
@@ -177,7 +177,7 @@ class StructuredMasking:
         self,
         coord: Tensor,
         labels: Optional[Tensor] = None,
-    ) -> Tuple[Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor]:
         n_points = coord.shape[0]
         device = coord.device
 
@@ -220,7 +220,7 @@ class AnomalyMasking:
         self,
         coord: Tensor,
         batch: Optional[Tensor] = None,
-    ) -> Tuple[Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor]:
         n_points = coord.shape[0]
         device = coord.device
 
@@ -244,7 +244,7 @@ class AnomalyMasking:
         return torch.rand(n_points, device=device) < self.ratio
 
     def _spatial_mask(self, coord: Tensor, device: torch.device) -> Tensor:
-        n_points = coord.shape[0]
+        coord.shape[0]
         center = coord.mean(dim=0)
         dist = torch.norm(coord - center, dim=1)
         dist_norm = (dist - dist.min()) / (dist.max() - dist.min() + 1e-6)

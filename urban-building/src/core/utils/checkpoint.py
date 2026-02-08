@@ -1,8 +1,7 @@
 # src/core/utils/checkpoint.py
-import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Union
 
 import torch
 import torch.nn as nn
@@ -15,7 +14,7 @@ def save_ckpt(
     epoch: int,
     path: Union[str, Path],
     best: bool = False,
-    extra: Optional[Dict[str, Any]] = None,
+    extra: Optional[dict[str, Any]] = None,
 ) -> str:
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
@@ -30,10 +29,7 @@ def save_ckpt(
     if extra:
         state.update(extra)
 
-    if best:
-        filepath = path / "best.pt"
-    else:
-        filepath = path / f"checkpoint_ep{epoch:03d}.pt"
+    filepath = path / "best.pt" if best else path / f"checkpoint_ep{epoch:03d}.pt"
 
     torch.save(state, filepath)
     return str(filepath)
@@ -45,7 +41,7 @@ def load_ckpt(
     optimizer: Optional[Optimizer] = None,
     strict: bool = True,
     device: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     path = Path(path)
 
     if device is None:

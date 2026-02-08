@@ -1,5 +1,5 @@
 # src/models/mae/model.py
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -7,7 +7,7 @@ from omegaconf import DictConfig
 from torch import Tensor
 
 from src.losses import masked_mse_loss
-from src.models.mae.decoder import MAEDecoder, TransformerDecoder
+from src.models.mae.decoder import MAEDecoder
 from src.models.mae.encoder import MAEEncoder
 from src.models.mae.masking import BlockMasking
 
@@ -37,7 +37,7 @@ class MAEModel(nn.Module):
         coord: Tensor,
         batch: Optional[Tensor] = None,
         offset: Optional[Tensor] = None,
-    ) -> Dict[str, Tensor]:
+    ) -> dict[str, Tensor]:
         if batch is None:
             batch = torch.zeros(feat.shape[0], dtype=torch.long, device=feat.device)
 
@@ -66,7 +66,7 @@ class MAEModel(nn.Module):
 
     def compute_loss(
         self,
-        output: Dict[str, Tensor],
+        output: dict[str, Tensor],
         target: Tensor,
     ) -> Tensor:
         reconstructed = output["reconstructed"]
@@ -97,7 +97,7 @@ class MAEForPretraining(MAEModel):
         feat: Tensor,
         coord: Tensor,
         batch: Optional[Tensor] = None,
-    ) -> Dict[str, Tensor]:
+    ) -> dict[str, Tensor]:
         target = feat[:, :4]
 
         output = self.forward(feat, coord, batch)

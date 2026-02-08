@@ -1,6 +1,6 @@
 # src/core/io/las.py
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Optional, Union
 
 import laspy
 import numpy as np
@@ -9,7 +9,7 @@ import numpy as np
 def read_las(
     path: Union[str, Path],
     fields: Optional[list] = None,
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     path = Path(path)
     las = laspy.read(path)
 
@@ -38,7 +38,7 @@ def write_las(
     intensity: Optional[np.ndarray] = None,
     rgb: Optional[np.ndarray] = None,
     labels: Optional[np.ndarray] = None,
-    extra_dims: Optional[Dict[str, np.ndarray]] = None,
+    extra_dims: Optional[dict[str, np.ndarray]] = None,
 ) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -66,7 +66,7 @@ def write_las(
     las.write(path)
 
 
-def get_las_bounds(path: Union[str, Path]) -> Tuple[np.ndarray, np.ndarray]:
+def get_las_bounds(path: Union[str, Path]) -> tuple[np.ndarray, np.ndarray]:
     path = Path(path)
     las = laspy.read(path)
     mins = np.array([las.x.min(), las.y.min(), las.z.min()])

@@ -1,9 +1,8 @@
 # main.py
 import sys
-from pathlib import Path
 
 import hydra
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from src.core.utils import get_logger, set_seed
 

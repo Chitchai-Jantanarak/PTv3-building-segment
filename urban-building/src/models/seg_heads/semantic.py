@@ -1,9 +1,8 @@
 # src/models/seg_heads/semantic.py
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from omegaconf import DictConfig
 from torch import Tensor
 
@@ -64,7 +63,7 @@ class SegAModel(nn.Module):
         feat: Tensor,
         coord: Tensor,
         batch: Optional[Tensor] = None,
-    ) -> Dict[str, Tensor]:
+    ) -> dict[str, Tensor]:
         encoded = self.encoder(feat, coord, batch)
         logits = self.head(encoded)
 

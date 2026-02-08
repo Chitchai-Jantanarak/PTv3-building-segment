@@ -1,6 +1,6 @@
 # src/core/preprocessing/preprocess.py
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 from omegaconf import DictConfig
@@ -21,7 +21,7 @@ class Preprocessor:
     def load_dem(self, dem_path: Union[str, Path]) -> None:
         self.dem, self.dem_meta = read_dem(dem_path)
 
-    def load_point_cloud(self, path: Union[str, Path]) -> Dict[str, np.ndarray]:
+    def load_point_cloud(self, path: Union[str, Path]) -> dict[str, np.ndarray]:
         path = Path(path)
         suffix = path.suffix.lower()
 
@@ -40,9 +40,9 @@ class Preprocessor:
 
     def process(
         self,
-        data: Dict[str, np.ndarray],
+        data: dict[str, np.ndarray],
         voxelize_data: bool = True,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         xyz = data["xyz"].astype(np.float32)
 
         rel_z = compute_rel_z(xyz, self.dem, self.dem_meta)
@@ -89,13 +89,13 @@ class Preprocessor:
         return xyz
 
 
-def read_h5(path: Union[str, Path]) -> Dict[str, np.ndarray]:
+def read_h5(path: Union[str, Path]) -> dict[str, np.ndarray]:
     import h5py
 
     path = Path(path)
     data = {}
     with h5py.File(path, "r") as f:
-        for key in f.keys():
+        for key in f:
             data[key] = np.array(f[key])
     return data
 
@@ -119,7 +119,7 @@ def preprocess_file(
     np.savez_compressed(output_path, **data)
 
 
-def load_preprocessed(path: Union[str, Path]) -> Dict[str, np.ndarray]:
+def load_preprocessed(path: Union[str, Path]) -> dict[str, np.ndarray]:
     path = Path(path)
     data = dict(np.load(path, allow_pickle=True))
     return data

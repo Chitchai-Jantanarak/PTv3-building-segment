@@ -1,5 +1,4 @@
 # src/models/hazus_head/codebook.py
-from typing import Dict, List, Optional
 
 import torch
 from torch import Tensor
@@ -41,7 +40,7 @@ def get_building_name(class_idx: int) -> str:
 
 def decode_predictions(
     predictions: Tensor,
-) -> List[Dict[str, str]]:
+) -> list[dict[str, str]]:
     results = []
 
     for pred in predictions:
@@ -71,5 +70,5 @@ class HazusCodebook:
         weights[1] = 0.5
         return weights
 
-    def decode(self, predictions: Tensor) -> List[Dict[str, str]]:
+    def decode(self, predictions: Tensor) -> list[dict[str, str]]:
         return decode_predictions(predictions)

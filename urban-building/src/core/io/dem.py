@@ -1,13 +1,13 @@
 # src/core/io/dem.py
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Optional, Union
 
 import numpy as np
 import rasterio
 from scipy.interpolate import RegularGridInterpolator
 
 
-def read_dem(path: Union[str, Path]) -> Tuple[np.ndarray, dict]:
+def read_dem(path: Union[str, Path]) -> tuple[np.ndarray, dict]:
     path = Path(path)
     with rasterio.open(path) as src:
         dem = src.read(1).astype(np.float32)

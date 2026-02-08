@@ -1,5 +1,5 @@
 # src/models/encoders/ptv3/point.py
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 from torch import Tensor
@@ -11,7 +11,7 @@ def build_point_dict(
     grid_size: float,
     batch: Optional[Tensor] = None,
     offset: Optional[Tensor] = None,
-) -> Dict[str, Tensor]:
+) -> dict[str, Tensor]:
     point = {
         "feat": feat,
         "coord": coord,
@@ -30,7 +30,7 @@ def build_point_dict(
     return point
 
 
-def extract_features(point: Dict[str, Tensor]) -> Tensor:
+def extract_features(point: dict[str, Tensor]) -> Tensor:
     return point["feat"]
 
 

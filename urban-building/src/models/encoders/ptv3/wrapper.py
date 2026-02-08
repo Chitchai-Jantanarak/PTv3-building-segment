@@ -1,9 +1,8 @@
 # src/models/encoders/ptv3/wrapper.py
 import sys
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Optional
 
-import torch
 import torch.nn as nn
 from omegaconf import DictConfig
 from torch import Tensor
@@ -66,7 +65,7 @@ class PTv3Encoder(nn.Module):
 
         return extract_features(point)
 
-    def forward_dict(self, point: Dict[str, Tensor]) -> Dict[str, Tensor]:
+    def forward_dict(self, point: dict[str, Tensor]) -> dict[str, Tensor]:
         if "grid_size" not in point:
             point["grid_size"] = self.grid_size
         return self.net(point)

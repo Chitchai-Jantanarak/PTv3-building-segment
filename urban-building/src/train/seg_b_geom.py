@@ -1,5 +1,4 @@
 # src/train/seg_b_geom.py
-import torch
 from omegaconf import DictConfig
 
 from src.core.utils import get_logger, set_seed

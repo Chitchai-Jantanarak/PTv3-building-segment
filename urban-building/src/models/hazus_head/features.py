@@ -1,5 +1,5 @@
 # src/models/hazus_head/features.py
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 from torch import Tensor
@@ -7,7 +7,7 @@ from torch import Tensor
 
 def compute_geometry_stats(
     xyz: Tensor,
-) -> Dict[str, Tensor]:
+) -> dict[str, Tensor]:
     device = xyz.device
 
     height = xyz[:, 2].max() - xyz[:, 2].min()
@@ -39,7 +39,7 @@ def compute_geometry_stats(
 def compute_roof_features(
     xyz: Tensor,
     roof_threshold: float = 0.8,
-) -> Dict[str, Tensor]:
+) -> dict[str, Tensor]:
     z = xyz[:, 2]
     z_min, z_max = z.min(), z.max()
     z_range = z_max - z_min

@@ -135,7 +135,12 @@ class BasePointCloudDataset(Dataset, ABC):
             data["instance"] = np.asarray(raw_data["instance"], dtype=np.int64)
 
         if "rgb" in raw_data and raw_data["rgb"] is not None:
-            data["rgb"] = np.asarray(raw_data["rgb"], dtype=np.float32)
+            rgb = np.asarray(raw_data["rgb"], dtype=np.float32)
+            if rgb.shape[0] != coords.shape[0] and "indices" in raw_data:
+                idx = np.asarray(raw_data["indices"], dtype=np.int64)
+                rgb = rgb[idx]
+            if rgb.shape[0] == coords.shape[0]:
+                data["rgb"] = rgb
 
         if "feature_names" in raw_data:
             data["feature_names"] = raw_data["feature_names"]

@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 
 class BasePointCloudDataset(Dataset, ABC):
-
     def __init__(
         self,
         root: Union[str, Path],

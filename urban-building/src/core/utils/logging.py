@@ -28,6 +28,14 @@ class Logger:
     def warn(self, msg: str) -> None:
         self._write(self._format("[WARN]", msg))
 
+    warning = warn
+
+    def exception(self, msg: str) -> None:
+        import traceback
+
+        self._write(self._format("[ERR]", msg))
+        self._write(traceback.format_exc())
+
     def epoch(self, n: int, msg: str) -> None:
         self._write(self._format(f"[EP {n:03d}]", msg))
 
@@ -37,3 +45,17 @@ class Logger:
 
 def get_logger(name: str = "MAIN", log_file: Optional[str] = None) -> Logger:
     return Logger(name=name, log_file=log_file)
+
+
+def setup_logging(cfg=None):
+    import logging
+
+    level = logging.INFO
+    if cfg is not None and hasattr(cfg, "run"):
+        level_name = getattr(cfg.run, "log_level", "INFO")
+        level = getattr(logging, level_name.upper(), logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(name)s][%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )

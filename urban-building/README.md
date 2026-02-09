@@ -19,13 +19,12 @@ This project implements a 4-stage training pipeline for urban building analysis:
 
 ## Features
 
-- 🏗️ **Multi-stage Training Pipeline**: MAE → SEG-A → SEG-B → FEMA
-- 🔧 **Hydra Configuration**: Single YAML-based control for all operations
-- 📊 **Multiple Datasets**: SensatUrban, WHU 3D, generic LAS/LAZ support
-- 🎯 **Block-level Masking**: Structured masking for better MAE pretraining
-- 🏢 **Hierarchical Classification**: HAZUS building codes (RES, COM, IND, GOV, EDU, AGR, REL)
-- 🗺️ **DEM Integration**: Relative height computation from Digital Elevation Models
-- ⚡ **A40 Optimized**: Configurations tuned for NVIDIA A40 GPUs
+- **Multi-stage Training Pipeline**: MAE → SEG-A → SEG-B → FEMA
+- **Hydra Configuration**: Single YAML-based control for all operations
+- **Multiple Datasets**: SensatUrban, WHU 3D, generic LAS/LAZ support
+- **Block-level Masking**: Structured masking for better MAE pretraining
+- **Hierarchical Classification**: HAZUS building codes (RES, COM, IND, GOV, EDU, AGR, REL)
+- **DEM Integration**: Relative height computation from Digital Elevation Models
 
 ## Installation
 
@@ -312,32 +311,6 @@ DLP Features (32-dim) → Shared MLP → Main Head (7 classes)
                       Conditioned Sub Head (28 classes)
                                    ↓
                       Attribute Heads (Stories, Basement)
-```
-
-## Memory Optimization (A40)
-
-Configurations are optimized for NVIDIA A40 (48GB VRAM):
-
-| Task | Batch Size | Max Points | Expected VRAM |
-|------|------------|------------|---------------|
-| MAE | 6 | 100,000 | ~32GB |
-| SEG-A | 2 | 80,000 | ~28GB |
-| SEG-B | 2 | 40,000 | ~20GB |
-| FEMA | 128 | - | ~4GB |
-
-For smaller GPUs, reduce `data.batch_size` and `data.max_points`.
-
-## Citation
-
-If you use this code, please cite:
-
-```bibtex
-@misc{urban-building-pipeline,
-  title={Urban Building Point Cloud Pipeline},
-  author={Urban Building Team},
-  year={2024},
-  howpublished={\url{https://github.com/your-org/PTv3-building-segment}}
-}
 ```
 
 ## References

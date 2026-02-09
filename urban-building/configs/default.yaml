@@ -1,3 +1,5 @@
+mode: train
+
 run:
   seed: 42
   device: cuda
@@ -6,9 +8,19 @@ run:
 
 paths:
   data_root: data
+  processed: ${paths.data_root}/processed/${data.name}
+  checkpoints: checkpoints
   ckpt_root: checkpoints
   log_root: logs
   run_root: runs
+  cache: ${paths.data_root}/cache
+
+data:
+  voxel_size: 0.04
+  max_points: 100000
+  num_workers: 4
+  pin_memory: true
+  ignore_index: -1
 
 runtime:
   clear_cuda_cache_each_epoch: true

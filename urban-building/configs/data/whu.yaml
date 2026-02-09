@@ -1,6 +1,8 @@
 name: whu
-type: h5
-root: ${paths.data_root}/raw/whu
+
+# Preprocessing
+raw_root: ${paths.data_root}/raw/whu
+format: h5
 subset: als
 features:
   xyz: true
@@ -19,3 +21,8 @@ labels:
   fence: 105800
   pedestrian: 100500
   vehicle: 100600
+
+# Training overrides
+num_classes: 9
+building_class: 2
+max_points: 80000

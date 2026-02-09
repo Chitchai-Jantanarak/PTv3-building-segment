@@ -3,9 +3,4 @@ defaults:
   - task: mae
   - model: ptv3
   - data: las
-
-run:
-  seed: 42
-  device: cuda
-  log_root: logs
-  ckpt_root: checkpoints
+  - _self_

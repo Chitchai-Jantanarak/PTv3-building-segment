@@ -1,6 +1,8 @@
 name: sansat
-type: ply
-root: ${paths.data_root}/raw/sansat
+
+# Preprocessing
+raw_root: ${paths.data_root}/raw/sansat
+format: ply
 features:
   xyz: true
   intensity: false
@@ -15,3 +17,8 @@ labels:
   traffic: 7
   street: 8
   car: 9
+
+# Training overrides
+num_classes: 13
+building_class: 2
+max_points: 80000

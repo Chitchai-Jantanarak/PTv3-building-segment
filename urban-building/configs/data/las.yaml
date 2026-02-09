@@ -1,9 +1,14 @@
 name: las
-type: las
-root: ${paths.data_root}/raw/las
+
+# Preprocessing
+raw_root: ${paths.data_root}/raw/las
+format: las
 features:
   xyz: true
   intensity: optional
   rgb: optional
   relz: true
 labels: null
+
+# Training overrides
+max_points: 100000

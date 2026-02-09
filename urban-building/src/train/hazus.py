@@ -3,7 +3,7 @@ import torch.nn.functional as F
 from omegaconf import DictConfig
 
 from src.core.utils import get_logger, set_seed
-from src.datasets import build_dataloader, build_dataset
+from src.datasets import build_dataloader
 from src.models.hazus_head import HazusModel
 from src.train._base import build_optimizer, build_scheduler, train_loop
 
@@ -32,13 +32,8 @@ def train_hazus(cfg: DictConfig) -> None:
     model = HazusModel(cfg)
     logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    train_dataset = build_dataset(cfg, split="train")
-    train_loader = build_dataloader(cfg, train_dataset, shuffle=True)
-
-    val_dataset = build_dataset(cfg, split="val")
-    val_loader = (
-        build_dataloader(cfg, val_dataset, shuffle=False) if val_dataset else None
-    )
+    train_loader = build_dataloader(cfg, split="train")
+    val_loader = build_dataloader(cfg, split="val")
 
     optimizer = build_optimizer(cfg, model)
     scheduler = build_scheduler(cfg, optimizer)
@@ -55,3 +50,6 @@ def train_hazus(cfg: DictConfig) -> None:
     )
 
     logger.info("HAZUS training complete")
+
+
+train = train_hazus

@@ -4,14 +4,14 @@ import torch.nn.functional as F
 from omegaconf import DictConfig
 
 from src.core.utils import get_logger, set_seed
-from src.datasets import build_dataloader, build_dataset
+from src.datasets import build_dataloader
 from src.losses import point_mse_loss
 from src.models.seg_heads import AnomalyMasking, SegBv2Model
 from src.train._base import build_optimizer, build_scheduler, train_loop
 
 
 def seg_b_v2_criterion(model, batch, device):
-    feat = batch["features"].to(device)
+    feat = batch["points"].to(device)
     coord = batch["coords"].to(device)
     batch_idx = batch["batch"].to(device)
     rgb = batch.get("rgb")
@@ -81,13 +81,8 @@ def train_seg_b_v2(cfg: DictConfig) -> None:
     model = SegBv2Model(cfg)
     logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    train_dataset = build_dataset(cfg, split="train")
-    train_loader = build_dataloader(cfg, train_dataset, shuffle=True)
-
-    val_dataset = build_dataset(cfg, split="val")
-    val_loader = (
-        build_dataloader(cfg, val_dataset, shuffle=False) if val_dataset else None
-    )
+    train_loader = build_dataloader(cfg, split="train")
+    val_loader = build_dataloader(cfg, split="val")
 
     optimizer = build_optimizer(cfg, model)
     scheduler = build_scheduler(cfg, optimizer)

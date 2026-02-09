@@ -20,6 +20,8 @@ def train_epoch(
     device: torch.device,
     epoch: int,
     logger: Logger,
+    scaler: Optional[torch.cuda.amp.GradScaler] = None,
+    use_amp: bool = False,
 ) -> float:
     model.train()
     total_loss = 0.0
@@ -28,10 +30,19 @@ def train_epoch(
     for batch_idx, batch in enumerate(dataloader):
         optimizer.zero_grad()
 
-        loss = criterion(model, batch, device)
+        with torch.cuda.amp.autocast(enabled=use_amp):
+            loss = criterion(model, batch, device)
 
-        loss.backward()
-        optimizer.step()
+        if scaler is not None:
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
 
         total_loss += loss.item()
         n_batches += 1
@@ -47,6 +58,7 @@ def validate_epoch(
     dataloader: DataLoader,
     criterion: Callable,
     device: torch.device,
+    use_amp: bool = False,
 ) -> float:
     model.eval()
     total_loss = 0.0
@@ -54,7 +66,8 @@ def validate_epoch(
 
     with torch.no_grad():
         for batch in dataloader:
-            loss = criterion(model, batch, device)
+            with torch.cuda.amp.autocast(enabled=use_amp):
+                loss = criterion(model, batch, device)
             total_loss += loss.item()
             n_batches += 1
 
@@ -77,6 +90,11 @@ def train_loop(
     ckpt_dir = Path(cfg.paths.ckpt_root) / cfg.task.name
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
+    use_amp = cfg.run.get("precision", "fp32") != "fp32"
+    scaler = torch.cuda.amp.GradScaler() if use_amp else None
+
+    patience = cfg.task.get("early_stopping_patience", 0)
+    no_improve = 0
     best_loss = float("inf")
 
     for epoch in range(1, cfg.task.epochs + 1):
@@ -88,12 +106,16 @@ def train_loop(
             device=device,
             epoch=epoch,
             logger=logger,
+            scaler=scaler,
+            use_amp=use_amp,
         )
 
         logger.epoch(epoch, f"Train Loss: {train_loss:.6f}")
 
         if val_loader is not None:
-            val_loss = validate_epoch(model, val_loader, criterion, device)
+            val_loss = validate_epoch(
+                model, val_loader, criterion, device, use_amp=use_amp
+            )
             logger.epoch(epoch, f"Val Loss: {val_loss:.6f}")
             current_loss = val_loss
         else:
@@ -105,8 +127,11 @@ def train_loop(
 
         if current_loss < best_loss:
             best_loss = current_loss
+            no_improve = 0
             save_ckpt(model, optimizer, epoch, ckpt_dir, best=True)
             logger.info(f"Best model saved at epoch {epoch}")
+        else:
+            no_improve += 1
 
         if epoch % 10 == 0:
             save_ckpt(model, optimizer, epoch, ckpt_dir, best=False)
@@ -116,6 +141,12 @@ def train_loop(
 
         if cfg.runtime.log_memory_each_epoch:
             log_memory(logger)
+
+        if patience > 0 and no_improve >= patience:
+            logger.info(
+                f"Early stopping at epoch {epoch} (no improvement for {patience} epochs)"
+            )
+            break
 
     return model
 
@@ -139,17 +170,30 @@ def build_optimizer(cfg: DictConfig, model: nn.Module) -> Optimizer:
 
 def build_scheduler(cfg: DictConfig, optimizer: Optimizer) -> Optional[_LRScheduler]:
     sched_type = cfg.task.scheduler.type.lower()
+    warmup_epochs = cfg.task.scheduler.get("warmup_epochs", 0)
 
     if sched_type == "cosine":
-        return torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=cfg.task.epochs - cfg.task.scheduler.warmup_epochs,
+        main_epochs = max(cfg.task.epochs - warmup_epochs, 1)
+        main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=main_epochs
         )
     elif sched_type == "step":
-        return torch.optim.lr_scheduler.StepLR(
+        main_scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer,
             step_size=cfg.task.scheduler.step_size,
             gamma=cfg.task.scheduler.gamma,
         )
     else:
         return None
+
+    if warmup_epochs > 0:
+        warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=0.01, total_iters=warmup_epochs
+        )
+        return torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[warmup_scheduler, main_scheduler],
+            milestones=[warmup_epochs],
+        )
+
+    return main_scheduler

@@ -7,15 +7,16 @@ import torch.nn as nn
 from omegaconf import DictConfig
 from torch import Tensor
 
-PTv3_PATH = (
-    Path(__file__).parent.parent.parent.parent.parent.parent / "PointTransformerV3"
+PTv3_PARENT = Path(__file__).parent.parent.parent.parent.parent.parent
+if str(PTv3_PARENT) not in sys.path:
+    sys.path.insert(0, str(PTv3_PARENT))
+
+from PointTransformerV3.model import PointTransformerV3  # noqa: E402
+
+from src.models.encoders.ptv3.point import (  # noqa: E402
+    build_point_dict,
+    extract_features,
 )
-if str(PTv3_PATH) not in sys.path:
-    sys.path.insert(0, str(PTv3_PATH))
-
-from model import PointTransformerV3
-
-from src.models.encoders.ptv3.point import build_point_dict, extract_features
 
 
 class PTv3Encoder(nn.Module):
@@ -44,7 +45,7 @@ class PTv3Encoder(nn.Module):
         )
 
         self.grid_size = cfg.model.grid_size
-        self.latent_dim = cfg.model.enc_channels[-1]
+        self.latent_dim = cfg.model.dec_channels[0]
 
     def forward(
         self,
@@ -79,6 +80,7 @@ class PTv3EncoderOnly(nn.Module):
         if hasattr(cfg.model, "intensity_channel") and cfg.model.intensity_channel:
             in_channels += 1
 
+        bottleneck_dim = cfg.model.enc_channels[-1]
         self.net = PointTransformerV3(
             in_channels=in_channels,
             order=("z", "z-trans", "hilbert", "hilbert-trans"),
@@ -88,8 +90,8 @@ class PTv3EncoderOnly(nn.Module):
             enc_num_head=[c // 32 for c in cfg.model.enc_channels],
             enc_patch_size=[cfg.model.patch_size] * len(cfg.model.enc_depths),
             dec_depths=[1],
-            dec_channels=[cfg.model.enc_channels[-1]],
-            dec_num_head=[cfg.model.enc_channels[-1] // 32],
+            dec_channels=[bottleneck_dim],
+            dec_num_head=[bottleneck_dim // 32],
             dec_patch_size=[cfg.model.patch_size],
             mlp_ratio=4,
             enable_flash=cfg.model.enable_flash,
@@ -97,7 +99,7 @@ class PTv3EncoderOnly(nn.Module):
         )
 
         self.grid_size = cfg.model.grid_size
-        self.latent_dim = cfg.model.enc_channels[-1]
+        self.latent_dim = bottleneck_dim
 
     def forward(
         self,

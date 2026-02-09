@@ -35,12 +35,19 @@ class MAEDecoder(nn.Module):
         masked_indices: Tensor,
         n_total: int,
     ) -> Tensor:
+        n_encoded = encoded.shape[0]
+        n_visible = visible_indices.shape[0]
 
         full_features = self.mask_token.expand(n_total, -1).clone()
-        full_features[visible_indices] = encoded
+
+        if n_encoded == n_visible:
+            full_features[visible_indices] = encoded
+        elif n_encoded < n_visible:
+            full_features[visible_indices[:n_encoded]] = encoded
+        else:
+            full_features[visible_indices] = encoded[:n_visible]
 
         reconstructed = self.decoder(full_features)
-
         return reconstructed
 
 
@@ -81,14 +88,21 @@ class TransformerDecoder(nn.Module):
         masked_indices: Tensor,
         n_total: int,
     ) -> Tensor:
+        n_encoded = encoded.shape[0]
+        n_visible = visible_indices.shape[0]
 
         full_features = self.mask_token.expand(n_total, -1).clone()
-        full_features[visible_indices] = encoded
+
+        if n_encoded == n_visible:
+            full_features[visible_indices] = encoded
+        elif n_encoded < n_visible:
+            full_features[visible_indices[:n_encoded]] = encoded
+        else:
+            full_features[visible_indices] = encoded[:n_visible]
 
         full_features = full_features.unsqueeze(0)
         decoded = self.transformer(full_features, full_features)
         decoded = decoded.squeeze(0)
 
         reconstructed = self.output_proj(decoded)
-
         return reconstructed

@@ -1,15 +1,4 @@
-"""
-Base dataset class for point cloud processing.
-
-Provides common functionality for all datasets:
-- Loading preprocessed .pth files
-- Voxelization and feature handling
-- Data augmentation
-- Batching utilities
-
-All task-specific datasets should inherit from this class.
-"""
-
+# src/dataset/base.py
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -23,13 +12,6 @@ logger = logging.getLogger(__name__)
 
 
 class BasePointCloudDataset(Dataset, ABC):
-    """
-    Abstract base class for point cloud datasets.
-
-    Subclasses must implement:
-        - _load_file_list(): Returns list of data files
-        - _get_class_info(): Returns class names and mapping
-    """
 
     def __init__(
         self,
@@ -64,16 +46,13 @@ class BasePointCloudDataset(Dataset, ABC):
         self.ignore_index = ignore_index
         self.cache_data = cache_data
 
-        # Data cache
         self._cache: dict[int, dict[str, Any]] = {}
 
-        # Load file list
         self.file_list = self._load_file_list()
 
         if len(self.file_list) == 0:
             logger.warning(f"No data files found in {self.root} for split '{split}'")
 
-        # Get class information
         self.class_names, self.class_mapping = self._get_class_info()
         self.num_classes = len(self.class_names) if self.class_names else 0
 
@@ -84,93 +63,56 @@ class BasePointCloudDataset(Dataset, ABC):
 
     @abstractmethod
     def _load_file_list(self) -> list[Path]:
-        """
-        Load list of data files for the current split.
-
-        Returns:
-            List of file paths
-        """
         raise NotImplementedError
 
     @abstractmethod
     def _get_class_info(
         self,
     ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
-        """
-        Get class names and optional label mapping.
-
-        Returns:
-            class_names: Dict mapping class ID to name, or None
-            class_mapping: Dict mapping original labels to new labels, or None
-        """
         raise NotImplementedError
 
     def __len__(self) -> int:
         return len(self.file_list)
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
-        """
-        Get a single sample.
-
-        Returns:
-            Dictionary containing:
-                - 'points': (N, D) point features
-                - 'coords': (N, 3) coordinates
-                - 'labels': (N,) semantic labels (if available)
-                - Additional fields depending on dataset
-        """
-        # Check cache
         if self.cache_data and idx in self._cache:
             data = self._cache[idx]
         else:
-            # Load from file
             file_path = self.file_list[idx]
             data = self._load_sample(file_path)
 
-            # Cache if enabled
             if self.cache_data:
                 self._cache[idx] = data
 
-        # Make a copy to avoid modifying cached data
         data = {
             k: v.copy() if isinstance(v, np.ndarray) else v for k, v in data.items()
         }
 
-        # Apply voxelization
         if self.voxel_size > 0:
             data = self._voxelize(data)
 
-        # Apply point limit
         if self.max_points is not None and len(data["coords"]) > self.max_points:
             data = self._random_sample(data, self.max_points)
 
-        # Apply transforms
         if self.transform is not None:
             data = self.transform(data)
 
-        # Convert to tensors
         data = self._to_tensors(data)
 
         return data
 
     def _load_sample(self, file_path: Path) -> dict[str, np.ndarray]:
-        """
-        Load a single sample from file.
-
-        Args:
-            file_path: Path to .pth file
-
-        Returns:
-            Dictionary with numpy arrays
-        """
         try:
-            raw_data = torch.load(file_path, map_location="cpu", weights_only=False)
+            if file_path.suffix == ".npz":
+                raw_data = dict(np.load(file_path, allow_pickle=True))
+            else:
+                raw_data = torch.load(file_path, map_location="cpu", weights_only=False)
         except Exception as e:
             logger.error(f"Failed to load {file_path}: {e}")
             raise
 
-        # Extract fields
-        coords = np.asarray(raw_data["coords"], dtype=np.float32)
+        coords_key = "coords" if "coords" in raw_data else "xyz"
+        coords = np.asarray(raw_data[coords_key], dtype=np.float32)
         features = np.asarray(raw_data["features"], dtype=np.float32)
 
         data = {
@@ -179,11 +121,9 @@ class BasePointCloudDataset(Dataset, ABC):
             "file_path": str(file_path),
         }
 
-        # Labels
         if "labels" in raw_data and raw_data["labels"] is not None:
             labels = np.asarray(raw_data["labels"], dtype=np.int64)
 
-            # Apply label mapping if defined
             if self.class_mapping is not None:
                 new_labels = np.full_like(labels, self.ignore_index)
                 for old_label, new_label in self.class_mapping.items():
@@ -192,36 +132,23 @@ class BasePointCloudDataset(Dataset, ABC):
 
             data["labels"] = labels
 
-        # Instance labels
         if "instance" in raw_data and raw_data["instance"] is not None:
             data["instance"] = np.asarray(raw_data["instance"], dtype=np.int64)
 
-        # Additional metadata
+        if "rgb" in raw_data and raw_data["rgb"] is not None:
+            data["rgb"] = np.asarray(raw_data["rgb"], dtype=np.float32)
+
         if "feature_names" in raw_data:
             data["feature_names"] = raw_data["feature_names"]
 
         return data
 
     def _voxelize(self, data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        """
-        Apply voxelization to the sample.
-
-        Args:
-            data: Sample dictionary
-
-        Returns:
-            Voxelized sample dictionary
-        """
         coords = data["coords"]
-        features = data["features"]
 
-        # Compute voxel indices
         voxel_idx = np.floor(coords / self.voxel_size).astype(np.int64)
-
-        # Shift to non-negative
         voxel_idx = voxel_idx - voxel_idx.min(axis=0)
 
-        # Hash to unique keys
         max_idx = voxel_idx.max(axis=0) + 1
         keys = (
             voxel_idx[:, 0] * max_idx[1] * max_idx[2]
@@ -229,49 +156,36 @@ class BasePointCloudDataset(Dataset, ABC):
             + voxel_idx[:, 2]
         )
 
-        # Find unique voxels and randomly select one point per voxel
-        unique_keys, inverse, counts = np.unique(
-            keys, return_inverse=True, return_counts=True
+        order = np.argsort(keys)
+        sorted_keys = keys[order]
+        breaks = np.flatnonzero(np.diff(sorted_keys)) + 1
+        groups = np.split(order, breaks)
+
+        selected_indices = np.array(
+            [g[np.random.randint(len(g))] for g in groups], dtype=np.int64
         )
 
-        # Random selection within each voxel
-        selected_indices = np.zeros(len(unique_keys), dtype=np.int64)
-        for i, key in enumerate(unique_keys):
-            point_indices = np.where(keys == key)[0]
-            selected_indices[i] = np.random.choice(point_indices)
-
-        # Apply selection
         data["coords"] = coords[selected_indices]
-        data["features"] = features[selected_indices]
+        data["features"] = data["features"][selected_indices]
 
         if "labels" in data:
             data["labels"] = data["labels"][selected_indices]
-
         if "instance" in data:
             data["instance"] = data["instance"][selected_indices]
+        if "rgb" in data:
+            data["rgb"] = data["rgb"][selected_indices]
 
         return data
 
     def _random_sample(
         self, data: dict[str, np.ndarray], num_points: int
     ) -> dict[str, np.ndarray]:
-        """
-        Randomly sample points from the data.
-
-        Args:
-            data: Sample dictionary
-            num_points: Number of points to sample
-
-        Returns:
-            Sampled data dictionary
-        """
         n = len(data["coords"])
         if n <= num_points:
             return data
 
-        # Random selection
         indices = np.random.choice(n, num_points, replace=False)
-        indices.sort()  # Keep spatial order
+        indices.sort()
 
         data["coords"] = data["coords"][indices]
         data["features"] = data["features"][indices]
@@ -282,32 +196,26 @@ class BasePointCloudDataset(Dataset, ABC):
         if "instance" in data:
             data["instance"] = data["instance"][indices]
 
+        if "rgb" in data:
+            data["rgb"] = data["rgb"][indices]
+
         return data
 
     def _to_tensors(self, data: dict[str, np.ndarray]) -> dict[str, torch.Tensor]:
-        """
-        Convert numpy arrays to PyTorch tensors.
-
-        Args:
-            data: Sample dictionary with numpy arrays
-
-        Returns:
-            Sample dictionary with tensors
-        """
         result = {}
 
-        # Points/features
         result["points"] = torch.from_numpy(data["features"]).float()
         result["coords"] = torch.from_numpy(data["coords"]).float()
 
-        # Labels
         if "labels" in data:
             result["labels"] = torch.from_numpy(data["labels"]).long()
 
         if "instance" in data:
             result["instance"] = torch.from_numpy(data["instance"]).long()
 
-        # Preserve non-array fields
+        if "rgb" in data:
+            result["rgb"] = torch.from_numpy(data["rgb"]).float()
+
         for key in ["file_path", "feature_names"]:
             if key in data:
                 result[key] = data[key]
@@ -315,19 +223,9 @@ class BasePointCloudDataset(Dataset, ABC):
         return result
 
     def get_class_weights(self, method: str = "inverse_freq") -> torch.Tensor:
-        """
-        Compute class weights for imbalanced training.
-
-        Args:
-            method: Weighting method ('inverse_freq', 'sqrt_inverse_freq', 'median_freq')
-
-        Returns:
-            (C,) tensor of class weights
-        """
         if self.num_classes == 0:
             raise ValueError("No class information available")
 
-        # Count labels across all samples
         label_counts = np.zeros(self.num_classes, dtype=np.int64)
 
         for idx in range(len(self)):
@@ -342,7 +240,6 @@ class BasePointCloudDataset(Dataset, ABC):
                 for label in labels:
                     label_counts[label] += 1
 
-        # Compute weights
         total = label_counts.sum()
 
         if method == "inverse_freq":
@@ -355,22 +252,14 @@ class BasePointCloudDataset(Dataset, ABC):
         else:
             raise ValueError(f"Unknown weighting method: {method}")
 
-        # Normalize
         weights = weights / weights.sum() * self.num_classes
 
         return torch.from_numpy(weights).float()
 
     def clear_cache(self) -> None:
-        """Clear the data cache."""
         self._cache.clear()
 
     def get_stats(self) -> dict[str, Any]:
-        """
-        Get dataset statistics.
-
-        Returns:
-            Dictionary with dataset statistics
-        """
         stats = {
             "num_samples": len(self),
             "split": self.split,
@@ -387,12 +276,6 @@ class BasePointCloudDataset(Dataset, ABC):
 
 
 class SimplePointCloudDataset(BasePointCloudDataset):
-    """
-    Simple dataset implementation that loads all .pth files from a directory.
-
-    Useful for generic datasets without specific structure.
-    """
-
     def __init__(
         self,
         root: Union[str, Path],
@@ -414,20 +297,17 @@ class SimplePointCloudDataset(BasePointCloudDataset):
         super().__init__(root=root, split=split, **kwargs)
 
     def _load_file_list(self) -> list[Path]:
-        """Load all .pth files from the split directory."""
         split_dir = self.root / self.split
 
         if not split_dir.exists():
-            # Try loading directly from root
             split_dir = self.root
 
-        files = sorted(split_dir.glob("*.pth"))
+        files = sorted(split_dir.glob("*.pth")) + sorted(split_dir.glob("*.npz"))
         return files
 
     def _get_class_info(
         self,
     ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
-        """Return class info passed to constructor."""
         return self._class_names, None
 
 
@@ -451,6 +331,7 @@ def collate_fn(batch: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
     points_list = []
     coords_list = []
     labels_list = []
+    rgb_list = []
     batch_indices = []
     offset = [0]
 
@@ -464,6 +345,9 @@ def collate_fn(batch: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
         if "labels" in sample:
             labels_list.append(sample["labels"])
 
+        if "rgb" in sample:
+            rgb_list.append(sample["rgb"])
+
         offset.append(offset[-1] + n)
 
     result = {
@@ -476,13 +360,11 @@ def collate_fn(batch: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
     if labels_list:
         result["labels"] = torch.cat(labels_list, dim=0)
 
+    if rgb_list:
+        result["rgb"] = torch.cat(rgb_list, dim=0)
+
     return result
 
 
 def worker_init_fn(worker_id: int) -> None:
-    """
-    Initialize worker process with unique random seed.
-
-    Use this as worker_init_fn in DataLoader for reproducibility.
-    """
     np.random.seed(np.random.get_state()[1][0] + worker_id)

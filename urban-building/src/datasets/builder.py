@@ -91,12 +91,7 @@ class SensatUrbanDataset(BasePointCloudDataset):
         if not split_dir.exists():
             split_dir = self.root
 
-        files = sorted(split_dir.glob("*.pth"))
-
-        if not files:
-            files = sorted(split_dir.glob("**/cambridge*.pth"))
-            files.extend(sorted(split_dir.glob("**/birmingham*.pth")))
-
+        files = sorted(split_dir.glob("*.pth")) + sorted(split_dir.glob("*.npz"))
         return files
 
     def _get_class_info(
@@ -166,8 +161,7 @@ class WHUDataset(BasePointCloudDataset):
         if not mode_dir.exists():
             mode_dir = self.root / self.split
 
-        files = sorted(mode_dir.glob("*.pth"))
-        return files
+        return sorted(mode_dir.glob("*.pth")) + sorted(mode_dir.glob("*.npz"))
 
     def _get_class_info(
         self,
@@ -264,7 +258,7 @@ class SegADataset(BasePointCloudDataset):
         if not split_dir.exists():
             split_dir = self.root
 
-        return sorted(split_dir.glob("*.pth"))
+        return sorted(split_dir.glob("*.pth")) + sorted(split_dir.glob("*.npz"))
 
     def _get_class_info(
         self,
@@ -504,7 +498,7 @@ def build_dataset(
     kwargs = {
         "root": root,
         "split": split,
-        "voxel_size": data_cfg.get("voxel_size", 0.04),
+        "voxel_size": data_cfg.get("grid_size", 0.04),
         "max_points": data_cfg.get("max_points", None),
         "transform": transform,
         "ignore_index": data_cfg.get("ignore_index", -1),
@@ -553,8 +547,12 @@ def build_dataloader(
     task: Optional[str] = None,
     transform: Optional[Callable] = None,
     collate: Optional[Callable] = None,
-) -> DataLoader:
+) -> Optional[DataLoader]:
     dataset = build_dataset(cfg, split=split, task=task, transform=transform)
+
+    if len(dataset) == 0:
+        logger.warning(f"No samples for split '{split}', skipping dataloader")
+        return None
 
     data_cfg = cfg.data if hasattr(cfg, "data") else cfg
 

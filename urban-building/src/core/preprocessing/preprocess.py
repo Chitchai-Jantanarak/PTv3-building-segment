@@ -14,7 +14,7 @@ from src.core.preprocessing.voxel import compute_grid_coords, voxelize
 class Preprocessor:
     def __init__(self, cfg: DictConfig):
         self.cfg = cfg
-        self.grid_size = cfg.model.grid_size
+        self.grid_size = cfg.data.grid_size
         self.dem = None
         self.dem_meta = None
 

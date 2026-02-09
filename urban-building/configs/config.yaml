@@ -2,5 +2,5 @@ defaults:
   - default
   - task: mae
   - model: ptv3
-  - data: las
+  - data: sansat
   - _self_

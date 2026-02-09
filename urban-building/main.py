@@ -20,7 +20,7 @@ def check_dependencies() -> bool:
         return False
 
     try:
-        import spconv
+        import spconv  # noqa: F401
 
         logger.info("spconv: OK")
     except ImportError:
@@ -28,7 +28,7 @@ def check_dependencies() -> bool:
         return False
 
     try:
-        import hydra
+        import hydra  # noqa: F401
 
         logger.info("hydra: OK")
     except ImportError:

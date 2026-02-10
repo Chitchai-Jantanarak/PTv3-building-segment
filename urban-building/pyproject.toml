@@ -135,7 +135,7 @@ all = [
 ]
 
 [project.scripts]
-urban-building = "runner:main"
+urban-building = "main:main"
 
 [project.urls]
 Homepage = "https://github.com/urban-building/PTv3-building-segment"

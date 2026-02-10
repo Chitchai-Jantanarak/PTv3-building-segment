@@ -244,7 +244,6 @@ class AnomalyMasking:
         return torch.rand(n_points, device=device) < self.ratio
 
     def _spatial_mask(self, coord: Tensor, device: torch.device) -> Tensor:
-        coord.shape[0]
         center = coord.mean(dim=0)
         dist = torch.norm(coord - center, dim=1)
         dist_norm = (dist - dist.min()) / (dist.max() - dist.min() + 1e-6)

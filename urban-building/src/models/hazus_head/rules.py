@@ -69,7 +69,7 @@ def apply_height_rules(
 ) -> Tensor:
     height = features[:, height_idx]
 
-    (height >= 0) & (height < 20)
+    low_rise = (height >= 0) & (height < 20)
     mid_rise = (height >= 20) & (height < 50)
     high_rise = height >= 50
 

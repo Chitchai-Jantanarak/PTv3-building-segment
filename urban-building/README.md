@@ -70,7 +70,7 @@ pip install -e ".[all]"
 
 ```
 urban-building/
-├── runner.py                 # 🔑 Single Hydra entry point
+├── main.py                 # 🔑 Single Hydra entry point
 ├── pyproject.toml            # Dependencies
 │
 ├── configs/                  # 🔧 All configuration
@@ -140,22 +140,22 @@ All behavior is controlled via Hydra configuration files. The main entry point i
 
 ```bash
 # Default: MAE pretraining with SensatUrban
-python runner.py
+python main.py
 
 # Specify task
-python runner.py task=seg_a
+python main.py task=seg_a
 
 # Change dataset
-python runner.py task=seg_a data=whu
+python main.py task=seg_a data=whu
 
 # Override parameters
-python runner.py task=mae training.epochs=100 data.batch_size=4
+python main.py task=mae training.epochs=100 data.batch_size=4
 
 # Preprocessing mode
-python runner.py mode=preprocess data=sensat
+python main.py mode=preprocess data=sensat
 
 # Inference mode
-python runner.py mode=infer task=seg_a
+python main.py mode=infer task=seg_a
 ```
 
 ### Configuration Hierarchy
@@ -177,7 +177,7 @@ mode: train             # preprocess | train | infer | pipeline
 Self-supervised pretraining using masked autoencoder approach with block-level masking.
 
 ```bash
-python runner.py task=mae
+python main.py task=mae
 ```
 
 **Key Settings:**
@@ -190,7 +190,7 @@ python runner.py task=mae
 Urban semantic segmentation following ScanNet/RandLA-Net style.
 
 ```bash
-python runner.py task=seg_a
+python main.py task=seg_a
 ```
 
 **Classes (SensatUrban):**
@@ -210,10 +210,10 @@ Geometry completion for buildings using structured masking (walls, roofs).
 
 ```bash
 # Geometry inpainting
-python runner.py task=seg_b_geom
+python main.py task=seg_b_geom
 
 # Color inpainting (requires color data)
-python runner.py task=seg_b_color
+python main.py task=seg_b_color
 ```
 
 **Key Features:**
@@ -226,7 +226,7 @@ python runner.py task=seg_b_color
 Hierarchical building classification following FEMA HAZUS standards.
 
 ```bash
-python runner.py task=fema
+python main.py task=fema
 ```
 
 **Classification Hierarchy:**
@@ -256,7 +256,7 @@ Urban-scale outdoor point cloud dataset with 13 classes.
 # Place in: data/raw/sensat/
 
 # Preprocess
-python runner.py mode=preprocess data=sensat
+python main.py mode=preprocess data=sensat
 ```
 
 ### WHU 3D
@@ -268,7 +268,7 @@ Chinese urban point cloud dataset with MLS (Mobile Laser Scanning) focus.
 # Place in: data/raw/whu/mls/
 
 # Preprocess
-python runner.py mode=preprocess data=whu
+python main.py mode=preprocess data=whu
 ```
 
 ### Custom LAS/LAZ Data
@@ -280,10 +280,10 @@ For inference on real-world LiDAR data:
 # Optional DEM in: data/raw/dem/
 
 # Preprocess
-python runner.py mode=preprocess data=las
+python main.py mode=preprocess data=las
 
 # Run full pipeline
-python runner.py mode=pipeline
+python main.py mode=pipeline
 ```
 
 ## Model Architecture

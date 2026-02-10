@@ -27,7 +27,6 @@ class BlockMasking:
         for b in unique_batches:
             batch_mask = batch == b
             batch_coord = coord[batch_mask]
-            batch_coord.shape[0]
 
             block_ids = self._assign_blocks(batch_coord)
             unique_blocks = torch.unique(block_ids)

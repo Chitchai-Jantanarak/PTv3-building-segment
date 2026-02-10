@@ -25,7 +25,7 @@ def seg_b_geom_criterion(model, batch, device):
 
     target_xyz = coord[masked_idx]
 
-    loss = chamfer_loss(xyz_pred[masked_idx], target_xyz)
+    loss = chamfer_loss(xyz_pred, target_xyz)
     return loss
 
 

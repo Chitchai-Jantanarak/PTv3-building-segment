@@ -27,11 +27,16 @@ def seg_b_color_criterion(model, batch, device):
     rgb_pred = output["rgb_pred"]
 
     target_xyz = coord[masked_idx]
-    geom_loss = chamfer_loss(xyz_pred[masked_idx], target_xyz)
+    geom_loss = chamfer_loss(xyz_pred, target_xyz)
 
     if rgb is not None:
         target_rgb = rgb[masked_idx]
-        color_loss = point_mse_loss(rgb_pred[masked_idx], target_rgb)
+        n_visible = xyz_pred.shape[0]
+        n_masked = target_rgb.shape[0]
+        if n_visible > n_masked:
+            color_loss = point_mse_loss(rgb_pred[:n_masked], target_rgb)
+        else:
+            color_loss = point_mse_loss(rgb_pred, target_rgb[:n_visible])
     else:
         color_loss = torch.tensor(0.0, device=device)
 

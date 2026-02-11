@@ -22,7 +22,7 @@ def seg_a_criterion(model, batch, device):
     output = model(feat, coord, batch_idx)
     logits = output["logits"]
 
-    loss = focal_loss(logits, labels, gamma=2.0)
+    loss = focal_loss(logits, labels, gamma=2.0, ignore_index=-1)
     return loss
 
 

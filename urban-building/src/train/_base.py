@@ -97,6 +97,9 @@ def train_loop(
     no_improve = 0
     best_loss = float("inf")
 
+    if train_loader is None:
+        raise ValueError("No training data available. Check data path and file format.")
+
     for epoch in range(1, cfg.task.epochs + 1):
         train_loss = train_epoch(
             model=model,

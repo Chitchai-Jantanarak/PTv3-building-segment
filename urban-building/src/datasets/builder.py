@@ -291,7 +291,7 @@ class SegBDataset(BasePointCloudDataset):
         if not split_dir.exists():
             split_dir = self.root
 
-        files = sorted(split_dir.glob("*.pth"))
+        files = sorted(split_dir.glob("*.pth")) + sorted(split_dir.glob("*.npz"))
 
         return files
 

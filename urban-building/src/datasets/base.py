@@ -87,11 +87,11 @@ class BasePointCloudDataset(Dataset, ABC):
             k: v.copy() if isinstance(v, np.ndarray) else v for k, v in data.items()
         }
 
-        if self.voxel_size > 0:
-            data = self._voxelize(data)
-
         if self.max_points is not None and len(data["coords"]) > self.max_points:
             data = self._random_sample(data, self.max_points)
+
+        if self.voxel_size > 0:
+            data = self._voxelize(data)
 
         if self.transform is not None:
             data = self.transform(data)
@@ -103,7 +103,8 @@ class BasePointCloudDataset(Dataset, ABC):
     def _load_sample(self, file_path: Path) -> dict[str, np.ndarray]:
         try:
             if file_path.suffix == ".npz":
-                raw_data = dict(np.load(file_path, allow_pickle=True))
+                # Lazy NpzFile: only arrays accessed via [] are decompressed
+                raw_data = np.load(file_path, allow_pickle=True)
             else:
                 raw_data = torch.load(file_path, map_location="cpu", weights_only=False)
         except Exception as e:
@@ -120,30 +121,39 @@ class BasePointCloudDataset(Dataset, ABC):
             "file_path": str(file_path),
         }
 
-        if "labels" in raw_data and raw_data["labels"] is not None:
-            labels = np.asarray(raw_data["labels"], dtype=np.int64)
+        if "labels" in raw_data:
+            labels_raw = raw_data["labels"]
+            if labels_raw is not None:
+                labels = np.asarray(labels_raw, dtype=np.int64)
 
-            if self.class_mapping is not None:
-                new_labels = np.full_like(labels, self.ignore_index)
-                for old_label, new_label in self.class_mapping.items():
-                    new_labels[labels == old_label] = new_label
-                labels = new_labels
+                if self.class_mapping is not None:
+                    new_labels = np.full_like(labels, self.ignore_index)
+                    for old_label, new_label in self.class_mapping.items():
+                        new_labels[labels == old_label] = new_label
+                    labels = new_labels
 
-            data["labels"] = labels
+                data["labels"] = labels
 
-        if "instance" in raw_data and raw_data["instance"] is not None:
-            data["instance"] = np.asarray(raw_data["instance"], dtype=np.int64)
+        if "instance" in raw_data:
+            inst = raw_data["instance"]
+            if inst is not None:
+                data["instance"] = np.asarray(inst, dtype=np.int64)
 
-        if "rgb" in raw_data and raw_data["rgb"] is not None:
-            rgb = np.asarray(raw_data["rgb"], dtype=np.float32)
-            if rgb.shape[0] != coords.shape[0] and "indices" in raw_data:
-                idx = np.asarray(raw_data["indices"], dtype=np.int64)
-                rgb = rgb[idx]
-            if rgb.shape[0] == coords.shape[0]:
-                data["rgb"] = rgb
+        if "rgb" in raw_data:
+            rgb_raw = raw_data["rgb"]
+            if rgb_raw is not None:
+                rgb = np.asarray(rgb_raw, dtype=np.float32)
+                if rgb.shape[0] != coords.shape[0] and "indices" in raw_data:
+                    idx = np.asarray(raw_data["indices"], dtype=np.int64)
+                    rgb = rgb[idx]
+                if rgb.shape[0] == coords.shape[0]:
+                    data["rgb"] = rgb
 
         if "feature_names" in raw_data:
             data["feature_names"] = raw_data["feature_names"]
+
+        if hasattr(raw_data, "close"):
+            raw_data.close()
 
         return data
 
@@ -208,8 +218,12 @@ class BasePointCloudDataset(Dataset, ABC):
     def _to_tensors(self, data: dict[str, np.ndarray]) -> dict[str, torch.Tensor]:
         result = {}
 
+        coords = data["coords"]
+        centroid = coords.mean(axis=0)
+        coords = coords - centroid
+
         result["points"] = torch.from_numpy(data["features"]).float()
-        result["coords"] = torch.from_numpy(data["coords"]).float()
+        result["coords"] = torch.from_numpy(coords).float()
 
         if "labels" in data:
             result["labels"] = torch.from_numpy(data["labels"]).long()

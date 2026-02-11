@@ -105,18 +105,23 @@ def preprocess_file(
     output_path: Union[str, Path],
     cfg: DictConfig,
     dem_path: Optional[Union[str, Path]] = None,
-) -> None:
+) -> bool:
     preprocessor = Preprocessor(cfg)
 
     if dem_path:
         preprocessor.load_dem(dem_path)
 
-    data = preprocessor.load_point_cloud(input_path)
-    data = preprocessor.process(data)
+    try:
+        data = preprocessor.load_point_cloud(input_path)
+        data = preprocessor.process(data)
+    except Exception as e:
+        print(f"[SKIP] {input_path}: {e}")
+        return False
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(output_path, **data)
+    return True
 
 
 def load_preprocessed(path: Union[str, Path]) -> dict[str, np.ndarray]:

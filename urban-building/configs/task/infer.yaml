@@ -1,0 +1,22 @@
+name: infer
+mode: infer
+
+input_path: null
+output_dir: output/infer
+
+# Keys required by model constructors during inference
+freeze_encoder: false
+loss:
+  weights:
+    geom: 0.7
+    color: 0.3
+
+checkpoints:
+  seg_a: checkpoints/seg_a/best.pt
+  seg_b_geom: checkpoints/seg_b_geom/best.pt
+  seg_b_color: checkpoints/seg_b_color/best.pt
+
+hazus:
+  use_model: false
+  dbscan_eps: 1.5
+  dbscan_min_pts: 200

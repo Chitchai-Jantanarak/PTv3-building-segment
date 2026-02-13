@@ -56,6 +56,39 @@ def load_ckpt(
     return state
 
 
+def load_pretrained_encoder(
+    model: nn.Module,
+    mae_ckpt_path: Union[str, Path],
+    device: Optional[str] = None,
+) -> int:
+    mae_ckpt_path = Path(mae_ckpt_path)
+    if not mae_ckpt_path.exists():
+        raise FileNotFoundError(f"MAE checkpoint not found: {mae_ckpt_path}")
+
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    state = torch.load(mae_ckpt_path, map_location=device)
+    mae_state = state["model_state_dict"]
+
+    # Extract encoder keys: encoder.encoder.net.* -> encoder.net.*
+    encoder_state = {}
+    for key, value in mae_state.items():
+        if key.startswith("encoder.encoder."):
+            new_key = key[len("encoder."):]  # strip first "encoder."
+            encoder_state[new_key] = value
+
+    if not encoder_state:
+        raise ValueError(
+            f"No encoder weights found in MAE checkpoint. "
+            f"Keys start with: {list(mae_state.keys())[:5]}"
+        )
+
+    missing, unexpected = model.load_state_dict(encoder_state, strict=False)
+
+    return len(encoder_state)
+
+
 def get_latest_ckpt(path: Union[str, Path]) -> Optional[Path]:
     path = Path(path)
     if not path.exists():

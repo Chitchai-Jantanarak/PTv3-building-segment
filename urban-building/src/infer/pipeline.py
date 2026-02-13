@@ -144,10 +144,8 @@ def _center_and_infer(engine, features, coords, centroid):
 def _chunked_inference(engine, features, coords, chunk_size):
     """Run inference in chunks with per-chunk coordinate centering.
 
-    Training centers coords per sample (subtract centroid) in _to_tensors.
-    This replicates that behavior per chunk so the model sees the same
-    coordinate scale it was trained on. xyz_pred outputs are de-centered
-    back to world coordinates.
+    Pre-allocates numpy output arrays and fills per-chunk to avoid
+    accumulating all chunk tensors in RAM (critical for large scenes).
     """
     n = len(coords)
 
@@ -161,12 +159,30 @@ def _chunked_inference(engine, features, coords, chunk_size):
         centroid = coords.mean(axis=0).astype(np.float32)
         return _center_and_infer(engine, features, coords, centroid)
 
-    all_results = {}
-    result_keys = None
     n_chunks = (n + chunk_size - 1) // chunk_size
     logger.info(f"Chunked inference: {n:,} pts -> {n_chunks} chunks of {chunk_size:,}")
 
-    for i in range(0, n, chunk_size):
+    # Run first chunk to discover output shapes/dtypes
+    end0 = min(chunk_size, n)
+    c0 = coords[:end0]
+    centroid = c0.mean(axis=0).astype(np.float32)
+    first_result = _center_and_infer(engine, features[:end0], c0, centroid)
+
+    # Pre-allocate numpy arrays for full output
+    output_arrays = {}
+    for k, v in first_result.items():
+        if isinstance(v, torch.Tensor):
+            v_np = v.cpu().numpy()
+            shape = (n,) + v_np.shape[1:] if v_np.ndim > 1 else (n,)
+            output_arrays[k] = np.empty(shape, dtype=v_np.dtype)
+            output_arrays[k][:end0] = v_np
+        # skip non-tensor outputs (rare)
+
+    del first_result
+    torch.cuda.empty_cache()
+
+    # Process remaining chunks
+    for chunk_idx, i in enumerate(range(chunk_size, n, chunk_size), start=1):
         end = min(i + chunk_size, n)
         chunk_coords = coords[i:end]
         chunk_feats = features[i:end]
@@ -174,22 +190,20 @@ def _chunked_inference(engine, features, coords, chunk_size):
         centroid = chunk_coords.mean(axis=0).astype(np.float32)
         chunk_result = _center_and_infer(engine, chunk_feats, chunk_coords, centroid)
 
-        if result_keys is None:
-            result_keys = list(chunk_result.keys())
-            all_results = {k: [chunk_result[k]] for k in result_keys}
-        else:
-            for k in result_keys:
-                all_results[k].append(chunk_result[k])
+        for k, v in chunk_result.items():
+            if k in output_arrays and isinstance(v, torch.Tensor):
+                output_arrays[k][i:end] = v.cpu().numpy()
 
+        del chunk_result
         torch.cuda.empty_cache()
 
+        if (chunk_idx + 1) % 200 == 0:
+            logger.info(f"  chunk {chunk_idx + 1}/{n_chunks}")
+
+    # Convert back to torch tensors for downstream compatibility
     merged = {}
-    for k in result_keys:
-        vals = all_results[k]
-        if isinstance(vals[0], torch.Tensor):
-            merged[k] = torch.cat(vals, dim=0)
-        else:
-            merged[k] = vals
+    for k, arr in output_arrays.items():
+        merged[k] = torch.from_numpy(arr)
     return merged
 
 
@@ -228,12 +242,17 @@ def run_full_inference(cfg: DictConfig) -> None:
     else:
         raw_data = read_ply(input_path)
 
-    original_xyz = raw_data["xyz"].copy()
+    original_xyz = raw_data["xyz"]
     n_total = len(original_xyz)
     logger.info(f"Loaded {n_total:,} points")
 
     preprocessor = Preprocessor(cfg)
     data = preprocessor.process(raw_data, voxelize_data=False)
+
+    features = data["features"]
+    coords = data["xyz"]
+    # Free preprocessor output dict (keep only what we need)
+    del data
 
     # ── Step 2: Seg-A ────────────────────────────────────────────────────
     if not seg_a_ckpt.exists():
@@ -242,12 +261,10 @@ def run_full_inference(cfg: DictConfig) -> None:
     logger.info("Running Seg-A inference...")
     seg_a_engine = SegAInference(cfg, seg_a_ckpt)
 
-    seg_a_result = _chunked_inference(
-        seg_a_engine, data["features"], data["xyz"], chunk_size
-    )
+    seg_a_result = _chunked_inference(seg_a_engine, features, coords, chunk_size)
     seg_a_labels = seg_a_result["predictions"].numpy()
 
-    del seg_a_engine
+    del seg_a_engine, seg_a_result
     torch.cuda.empty_cache()
 
     seg_a_path = output_dir / "segmented.las"
@@ -267,7 +284,9 @@ def run_full_inference(cfg: DictConfig) -> None:
         return
 
     building_xyz = original_xyz[building_mask]
-    building_features = data["features"][building_mask]
+    building_features = features[building_mask]
+    # Free full features array — no longer needed
+    del features, coords
 
     # ── Step 4: Seg-B-geom (optional) ────────────────────────────────────
     geom_xyz = None
@@ -283,7 +302,7 @@ def run_full_inference(cfg: DictConfig) -> None:
         export_las(geom_path, xyz=geom_xyz)
         logger.info(f"Saved Seg-B-geom output: {geom_path}")
 
-        del seg_b_geom_engine
+        del seg_b_geom_engine, seg_b_geom_result
         torch.cuda.empty_cache()
     else:
         logger.info(f"Skipping Seg-B-geom (no checkpoint: {seg_b_geom_ckpt})")
@@ -304,10 +323,13 @@ def run_full_inference(cfg: DictConfig) -> None:
         export_las(painted_path, xyz=color_xyz, rgb=color_rgb)
         logger.info(f"Saved Seg-B-color output: {painted_path}")
 
-        del seg_b_color_engine
+        del seg_b_color_engine, seg_b_color_result
         torch.cuda.empty_cache()
     else:
         logger.info(f"Skipping Seg-B-color (no checkpoint: {seg_b_color_ckpt})")
+
+    # Free building features after Seg-B stages
+    del building_features
 
     # ── Step 6: Rule-based HAZUS ─────────────────────────────────────────
     logger.info("Running HAZUS rule-based classification...")
@@ -359,39 +381,39 @@ def run_full_inference(cfg: DictConfig) -> None:
 
     # ── Step 7: Merged output ────────────────────────────────────────────
     logger.info("Building merged output...")
-    merged_xyz = original_xyz.copy()
-    merged_labels = seg_a_labels.copy()
-    merged_rgb = raw_data.get("rgb")
-
-    # Overwrite building geometry if available
+    # Modify original_xyz in-place for merged (avoid full copy)
+    merged_xyz = original_xyz
     if geom_xyz is not None and len(geom_xyz) == n_building:
+        merged_xyz = original_xyz.copy()  # only copy if we need to modify
         merged_xyz[building_mask] = geom_xyz
+    del geom_xyz
 
-    # Add color from Seg-B-color for building points
+    merged_rgb = raw_data.get("rgb")
     if color_rgb is not None and len(color_rgb) == n_building:
         if merged_rgb is None:
             merged_rgb = np.zeros((n_total, 3), dtype=np.float32)
         merged_rgb[building_mask] = color_rgb
+    del color_rgb
 
-    # Build HAZUS extra dims for full point cloud
+    # Build HAZUS extra dims for full point cloud (vectorized)
     hazus_cluster_full = np.zeros(n_total, dtype=np.int32)
     hazus_occ_full = np.zeros(n_total, dtype=np.uint8)
-    building_indices = np.where(building_mask)[0]
-    for i, idx in enumerate(building_indices):
-        hazus_cluster_full[idx] = hazus_point_cluster[i]
-        hazus_occ_full[idx] = hazus_point_occ[i]
+    hazus_cluster_full[building_mask] = hazus_point_cluster
+    hazus_occ_full[building_mask] = hazus_point_occ
+    del hazus_point_cluster, hazus_point_occ
 
     merged_path = output_dir / "merged.las"
     write_las(
         merged_path,
         xyz=merged_xyz,
         rgb=merged_rgb,
-        labels=merged_labels,
+        labels=seg_a_labels,
         extra_dims={
             "cluster_id": hazus_cluster_full,
             "occupancy": hazus_occ_full,
         },
     )
+    del hazus_cluster_full, hazus_occ_full, merged_xyz, merged_rgb
     logger.info(f"Saved merged output: {merged_path}")
 
     # ── Summary ──────────────────────────────────────────────────────────

@@ -381,15 +381,17 @@ def run_full_inference(cfg: DictConfig) -> None:
 
     # ── Step 7: Merged output ────────────────────────────────────────────
     logger.info("Building merged output...")
-    # Modify original_xyz in-place for merged (avoid full copy)
+    has_geom = geom_xyz is not None
+    has_color = color_rgb is not None
+
     merged_xyz = original_xyz
-    if geom_xyz is not None and len(geom_xyz) == n_building:
-        merged_xyz = original_xyz.copy()  # only copy if we need to modify
+    if has_geom and len(geom_xyz) == n_building:
+        merged_xyz = original_xyz.copy()
         merged_xyz[building_mask] = geom_xyz
     del geom_xyz
 
     merged_rgb = raw_data.get("rgb")
-    if color_rgb is not None and len(color_rgb) == n_building:
+    if has_color and len(color_rgb) == n_building:
         if merged_rgb is None:
             merged_rgb = np.zeros((n_total, 3), dtype=np.float32)
         merged_rgb[building_mask] = color_rgb
@@ -422,8 +424,8 @@ def run_full_inference(cfg: DictConfig) -> None:
     logger.info(
         f"  segmented.las : {n_total:,} points, {len(np.unique(seg_a_labels))} classes"
     )
-    logger.info(f"  geom.las      : {'OK' if geom_xyz is not None else 'SKIPPED'}")
-    logger.info(f"  painted.las   : {'OK' if color_rgb is not None else 'SKIPPED'}")
+    logger.info(f"  geom.las      : {'OK' if has_geom else 'SKIPPED'}")
+    logger.info(f"  painted.las   : {'OK' if has_color else 'SKIPPED'}")
     logger.info(f"  hazus.csv     : {len(hazus_rows)} buildings classified")
     logger.info(f"  hazus.las     : {n_building:,} building points")
     logger.info(f"  merged.las    : {n_total:,} points (combined)")

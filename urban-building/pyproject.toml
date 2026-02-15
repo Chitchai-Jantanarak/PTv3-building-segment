@@ -5,7 +5,7 @@ description = "Multi-pipeline point cloud processing for urban building segmenta
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Urban Building Team" }]
-requires-python = ">=3.9, <3.12"
+requires-python = ">=3.10, <3.13"
 
 keywords = [
     "point-cloud",
@@ -23,9 +23,9 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: GIS",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
@@ -34,7 +34,7 @@ dependencies = [
     # ============================================================
     # Core Dependencies
     # ============================================================
-    "numpy>=1.24.0,<2.0.0",
+    "numpy>=1.24.0",
     "scipy>=1.10.0",
     "scikit-learn>=1.2.0",
 
@@ -73,17 +73,18 @@ dependencies = [
     "psutil>=5.9.0",
 
     # ============================================================
-    # PTv3 Dependencies (installed via uv after conda pytorch)
+    # PTv3 Dependencies
     # ============================================================
     "timm>=0.9.0",
     "addict>=2.4.0",
+    "einops>=0.7.0",
 ]
 
 [project.optional-dependencies]
-# PyTorch and CUDA - typically installed via conda
+# PyTorch and CUDA — install via: uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 torch = [
-    "torch>=2.1,<2.2",
-    "torchvision>=0.16,<0.17",
+    "torch>=2.6,<2.8",
+    "torchvision>=0.21,<0.23",
 ]
 
 
@@ -129,7 +130,7 @@ notebook = [
     "ipywidgets>=8.0.0",
 ]
 
-# All dependencies (except torch which needs conda)
+# All dependencies (except torch — see setup_env2.sh)
 all = [
     "urban-building[train,inference,export,dev,notebook]",
 ]
@@ -164,8 +165,8 @@ dev-dependencies = [
 
 # Pins PyTorch to prevent transitive dependency upgrades
 constraint-dependencies = [
-    "torch>=2.1.0,<2.2.0",
-    "torchvision>=0.16.0,<0.17.0",
+    "torch>=2.6.0,<2.8.0",
+    "torchvision>=0.21.0,<0.23.0",
 ]
 
 [tool.uv.extra-build-dependencies]
@@ -175,7 +176,7 @@ flash-attn = ["psutil"]
 # Ruff (Linting & Formatting)
 # ============================================================
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 88
 indent-width = 4
 
@@ -217,7 +218,7 @@ line-ending = "auto"
 # ============================================================
 [tool.black]
 line-length = 88
-target-version = ["py39", "py310", "py311"]
+target-version = ["py310", "py311", "py312"]
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -248,7 +249,7 @@ skip = [".venv", "lib", "lib64"]
 # MyPy (Type Checking)
 # ============================================================
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true

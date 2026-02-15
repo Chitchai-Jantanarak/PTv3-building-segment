@@ -309,6 +309,10 @@ class SegBDataset(BasePointCloudDataset):
             if building_mask.sum() > 100:  # Enough building points
                 data["points"] = data["points"][building_mask]
                 data["coords"] = data["coords"][building_mask]
+                if "rgb" in data:
+                    data["rgb"] = data["rgb"][building_mask]
+                if "instance" in data:
+                    data["instance"] = data["instance"][building_mask]
                 data.pop("labels", None)  # No longer needed
 
         data = self._apply_masking(data)
@@ -517,7 +521,7 @@ def build_dataset(
 
     elif task in ["seg_b", "seg_b_geom", "seg_b_color"]:
         dataset_cls = get_dataset_class("seg_b")
-        kwargs["building_class"] = data_cfg.get("filter_class", 2)
+        kwargs["building_class"] = data_cfg.get("building_class", 2)
         masking = task_cfg.get("masking", {})
         kwargs["mask_ratio"] = (
             masking.get("ratio", 0.75) if hasattr(masking, "get") else 0.75

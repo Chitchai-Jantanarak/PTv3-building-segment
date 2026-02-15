@@ -41,7 +41,7 @@ class SegAModel(nn.Module):
 
         self.head = SegmentationHead(
             in_channels=self.encoder.latent_dim,
-            num_classes=2,
+            num_classes=cfg.data.num_classes,
             hidden_dim=256,
         )
 
@@ -87,10 +87,17 @@ def generate_pseudo_labels(
     rel_z: Tensor,
     height_threshold: float = 2.0,
     planarity_threshold: float = 0.8,
+    building_class: int = 2,
+    ground_class: int = 0,
+    ignore_index: int = -1,
 ) -> Tensor:
     is_elevated = rel_z > height_threshold
+    is_ground = rel_z <= 0.3
 
-    labels = torch.zeros(coord.shape[0], dtype=torch.long, device=coord.device)
-    labels[is_elevated] = 1
+    labels = torch.full(
+        (coord.shape[0],), ignore_index, dtype=torch.long, device=coord.device
+    )
+    labels[is_ground] = ground_class
+    labels[is_elevated] = building_class
 
     return labels

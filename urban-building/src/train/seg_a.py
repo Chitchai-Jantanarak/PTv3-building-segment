@@ -21,8 +21,13 @@ def seg_a_criterion(model, batch, device):
 
     output = model(feat, coord, batch_idx)
     logits = output["logits"]
+    n_classes = logits.shape[-1]
 
-    loss = focal_loss(logits, labels, gamma=2.0)
+    ignore_index = -100
+    invalid = (labels < 0) | (labels >= n_classes)
+    labels[invalid] = ignore_index
+
+    loss = focal_loss(logits, labels, gamma=2.0, ignore_index=ignore_index)
     return loss
 
 

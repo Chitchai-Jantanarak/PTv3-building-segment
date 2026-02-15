@@ -345,6 +345,8 @@ def collate_fn(batch: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
             - 'batch': (B*N,) batch indices
             - 'labels': (B*N,) concatenated labels (if present)
             - 'offset': (B,) cumulative point counts
+            - 'visible'/'visible_coords'/'target'/'target_coords'/'mask':
+              (present when SegBDataset provides masking output)
     """
     points_list = []
     coords_list = []
@@ -352,6 +354,11 @@ def collate_fn(batch: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
     rgb_list = []
     batch_indices = []
     offset = [0]
+
+    # Seg-B masking keys
+    _MASK_KEYS = ("visible", "visible_coords", "target", "target_coords", "mask")
+    mask_lists: dict[str, list] = {k: [] for k in _MASK_KEYS}
+    mask_batch_lists: dict[str, list] = {k: [] for k in _MASK_KEYS}
 
     for i, sample in enumerate(batch):
         n = sample["points"].shape[0]
@@ -365,6 +372,14 @@ def collate_fn(batch: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
 
         if "rgb" in sample:
             rgb_list.append(sample["rgb"])
+
+        for k in _MASK_KEYS:
+            if k in sample:
+                t = sample[k]
+                mask_lists[k].append(t)
+                mask_batch_lists[k].append(
+                    torch.full((t.shape[0],), i, dtype=torch.long)
+                )
 
         offset.append(offset[-1] + n)
 
@@ -380,6 +395,11 @@ def collate_fn(batch: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
 
     if rgb_list:
         result["rgb"] = torch.cat(rgb_list, dim=0)
+
+    for k in _MASK_KEYS:
+        if mask_lists[k]:
+            result[k] = torch.cat(mask_lists[k], dim=0)
+            result[f"{k}_batch"] = torch.cat(mask_batch_lists[k], dim=0)
 
     return result
 

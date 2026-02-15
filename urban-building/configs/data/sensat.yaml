@@ -1,7 +1,7 @@
-name: sansat
+name: sensat
 
 # Preprocessing
-raw_root: ${paths.data_root}/raw/sansat
+raw_root: ${paths.data_root}/raw/sensat
 format: ply
 features:
   xyz: true

@@ -1,6 +1,6 @@
 defaults:
   - default
-  - task: hazus
+  - task: seg_a
   - model: ptv3
-  - data: sansat
+  - data: sensat
   - _self_

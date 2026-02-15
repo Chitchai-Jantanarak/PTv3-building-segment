@@ -38,28 +38,21 @@ def seg_b_v2_criterion(model, batch, device):
     target_relz = feat[masked_idx, 3:4]
     target_xyzr = torch.cat([target_coord, target_relz], dim=-1)
 
-    n_visible = len(visible_idx)
-    n_masked = len(masked_idx)
+    with torch.no_grad():
+        dist = torch.cdist(xyzr_pred[:, :3], target_coord)  
+        nn_idx = dist.argmin(dim=1)  #
 
-    if n_visible > n_masked:
-        pred_xyzr = xyzr_pred[:n_masked]
-    else:
-        pred_xyzr = xyzr_pred
-        target_xyzr = target_xyzr[:n_visible]
-
-    geom_loss = point_mse_loss(pred_xyzr, target_xyzr)
+    matched_target_xyzr = target_xyzr[nn_idx]
+    geom_loss = point_mse_loss(xyzr_pred, matched_target_xyzr)
 
     if rgb is not None:
         target_rgb = rgb[masked_idx]
-        if n_visible > n_masked:
-            pred_rgb = rgb_pred[:n_masked]
-        else:
-            pred_rgb = rgb_pred
-            target_rgb = target_rgb[:n_visible]
-        color_loss = point_mse_loss(pred_rgb, target_rgb)
+        matched_target_rgb = target_rgb[nn_idx]
+        color_loss = point_mse_loss(rgb_pred, matched_target_rgb)
     else:
         color_loss = torch.tensor(0.0, device=device)
 
+    n_visible = len(visible_idx)
     anomaly_target = torch.zeros(n_visible, 1, device=device)
     anomaly_loss = F.binary_cross_entropy(anomaly_score, anomaly_target)
 

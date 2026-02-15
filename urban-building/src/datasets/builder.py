@@ -291,7 +291,7 @@ class SegBDataset(BasePointCloudDataset):
         if not split_dir.exists():
             split_dir = self.root
 
-        files = sorted(split_dir.glob("*.pth"))
+        files = sorted(split_dir.glob("*.pth")) + sorted(split_dir.glob("*.npz"))
 
         return files
 
@@ -498,6 +498,14 @@ def build_dataset(
 
         orig_cwd = Path(_hu.get_original_cwd()) if _has_hydra_cwd() else Path.cwd()
         root = orig_cwd / root
+
+    # For WHU, append subset (als/mls) to processed root so task-specific
+    # datasets (MAE, SegA, SegB) find {root}/{split}/ correctly
+    data_name = data_cfg.get("name", "")
+    whu_mode = None
+    if data_name == "whu":
+        whu_mode = data_cfg.get("subset", "als")
+        root = root / whu_mode
 
     kwargs = {
         "root": root,

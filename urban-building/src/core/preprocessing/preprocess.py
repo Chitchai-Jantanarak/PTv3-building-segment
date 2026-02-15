@@ -31,8 +31,15 @@ class Preprocessor:
             data = read_ply(path)
         elif suffix in [".h5", ".hdf5"]:
             data = read_h5(path)
-            if "xyz" not in data and "x" in data:
-                data["xyz"] = np.stack([data["x"], data["y"], data["z"]], axis=-1)
+            if "xyz" not in data:
+                if "coords" in data:
+                    data["xyz"] = data.pop("coords")
+                elif "x" in data:
+                    data["xyz"] = np.stack([data["x"], data["y"], data["z"]], axis=-1)
+            if "labels" not in data and "semantics" in data:
+                data["labels"] = data.pop("semantics")
+            if "instance" not in data and "instances" in data:
+                data["instance"] = data.pop("instances")
         else:
             raise ValueError(f"Unsupported file format: {suffix}")
 

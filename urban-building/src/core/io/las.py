@@ -63,6 +63,13 @@ def write_las(
     if labels is not None:
         las.classification = labels.astype(np.uint8)
 
+    if extra_dims is not None:
+        for dim_name, dim_data in extra_dims.items():
+            las.add_extra_dim(
+                laspy.ExtraBytesParams(name=dim_name, type=dim_data.dtype)
+            )
+            las[dim_name] = dim_data
+
     las.write(path)
 
 

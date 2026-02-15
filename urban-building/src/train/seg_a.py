@@ -1,7 +1,7 @@
 # src/train/seg_a.py
 from omegaconf import DictConfig
 
-from src.core.utils import get_logger, set_seed
+from src.core.utils import get_logger, load_pretrained_encoder, set_seed
 from src.datasets import build_dataloader
 from src.losses import focal_loss
 from src.models.seg_heads import SegAModel, generate_pseudo_labels
@@ -39,6 +39,15 @@ def train_seg_a(cfg: DictConfig) -> None:
 
     model = SegAModel(cfg)
     logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+    # Load MAE pretrained encoder weights
+    mae_ckpt = cfg.task.get("pretrained_encoder", None)
+    if mae_ckpt:
+        n_loaded = load_pretrained_encoder(model, mae_ckpt)
+        logger.info(f"Loaded {n_loaded} encoder weight tensors from MAE: {mae_ckpt}")
+    else:
+        logger.warning("No pretrained_encoder specified — training from scratch!")
+
     logger.info(f"Encoder frozen: {cfg.task.freeze_encoder}")
 
     train_loader = build_dataloader(cfg, split="train")

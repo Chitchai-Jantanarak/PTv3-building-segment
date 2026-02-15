@@ -4,16 +4,24 @@ import torch.nn as nn
 from torch import Tensor
 
 
+def _chunked_min_dist(source: Tensor, target: Tensor, chunk_size: int) -> Tensor:
+    mins = []
+    for i in range(0, source.shape[0], chunk_size):
+        chunk = source[i : i + chunk_size]
+        diff = chunk.unsqueeze(1) - target.unsqueeze(0)
+        dist = (diff**2).sum(-1)
+        mins.append(dist.min(dim=1)[0])
+    return torch.cat(mins)
+
+
 def chamfer_loss(
     pred: Tensor,
     target: Tensor,
     reduction: str = "mean",
+    chunk_size: int = 2048,
 ) -> Tensor:
-    diff = pred.unsqueeze(1) - target.unsqueeze(0)
-    dist = torch.sum(diff**2, dim=-1)
-
-    min_pred_to_target = torch.min(dist, dim=1)[0]
-    min_target_to_pred = torch.min(dist, dim=0)[0]
+    min_pred_to_target = _chunked_min_dist(pred, target, chunk_size)
+    min_target_to_pred = _chunked_min_dist(target, pred, chunk_size)
 
     if reduction == "mean":
         return min_pred_to_target.mean() + min_target_to_pred.mean()

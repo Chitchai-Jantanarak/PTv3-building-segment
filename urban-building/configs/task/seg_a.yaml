@@ -2,6 +2,7 @@ name: seg_a
 stage: 1
 model: seg_a
 freeze_encoder: true
+pretrained_encoder: checkpoints/mae/best.pt
 
 pseudo_labels:
   height_threshold: 2.0
@@ -21,4 +22,4 @@ scheduler:
   warmup_epochs: 5
 
 epochs: 100
-batch_size: 8
+batch_size: 6

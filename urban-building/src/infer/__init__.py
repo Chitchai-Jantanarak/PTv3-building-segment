@@ -9,6 +9,7 @@ from src.infer.export import (
     get_timestamp,
 )
 from src.infer.hazus import HazusInference, run_hazus_inference
+from src.infer.pipeline import run_full_inference
 from src.infer.seg_a import SegAInference, run_seg_a_inference
 from src.infer.seg_b import (
     SegBColorInference,
@@ -26,6 +27,7 @@ __all__ = [
     "run_seg_b_inference",
     "HazusInference",
     "run_hazus_inference",
+    "run_full_inference",
     "export_las",
     "export_ply",
     "export_csv",

@@ -68,6 +68,10 @@ def dispatch_task(cfg: DictConfig) -> None:
         from src.train import train_hazus
 
         train_hazus(cfg)
+    elif task_name == "infer":
+        from src.infer.pipeline import run_full_inference
+
+        run_full_inference(cfg)
     else:
         logger.error(f"Unknown task: {task_name}")
         raise ValueError(f"Unknown task: {task_name}")

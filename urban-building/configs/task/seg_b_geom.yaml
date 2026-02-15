@@ -2,6 +2,7 @@ name: seg_b_geom
 stage: 2
 model: seg_b_geom
 freeze_encoder: false
+pretrained_encoder: checkpoints/mae/best.pt
 input_filter: building_only
 
 masking:
@@ -21,4 +22,4 @@ scheduler:
   warmup_epochs: 10
 
 epochs: 150
-batch_size: 4
+batch_size: 1

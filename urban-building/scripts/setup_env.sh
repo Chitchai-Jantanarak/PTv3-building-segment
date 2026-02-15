@@ -43,7 +43,7 @@ cd "${PROJECT_DIR}"
 uv pip install spconv-cu118
 uv pip install torch-scatter -f https://data.pyg.org/whl/torch-2.1.0+cu118.html
 uv pip install timm>=0.9.0 addict
-uv pip install flash-attn --no-build-isolation || echo "[WARN] flash-attn failed, continuing"
+uv pip install flash-attn==2.5.9.post1 --no-build-isolation || echo "[WARN] flash-attn failed, continuing"
 
 uv pip install -e ".[all]"
 

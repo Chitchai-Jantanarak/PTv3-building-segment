@@ -26,7 +26,7 @@ def masked_mse_loss(
     reduction: str = "mean",
 ) -> Tensor:
     diff = pred - target
-    mse = torch.sum(diff**2, dim=-1)
+    mse = torch.mean(diff**2, dim=-1)
 
     masked_mse = mse * mask.float()
 

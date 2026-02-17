@@ -5,7 +5,7 @@ PYTHON_VERSION="3.11"
 PYTORCH_VERSION="2.7.0"
 CUDA_TAG="cu128"                         
 SPCONV_CUDA_TAG="cu124"                      
-FLASH_ATTN_VERSION="2.7.4"                    
+FLASH_ATTN_VERSION="2.8.3"                    
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 VENV_DIR="${PROJECT_DIR}/.venv"
 PTv3_DIR="$(cd "${PROJECT_DIR}/../PointTransformerV3" && pwd)"
@@ -67,7 +67,7 @@ if ! uv pip install "flash-attn>=${FLASH_ATTN_VERSION}" 2>/dev/null; then
     echo "[INFO] No prebuilt wheel found, building flash-attn from source..."
     echo "[INFO] This may take 10-20 minutes. Go grab coffee."
 
-    uv pip install packaging ninja psutil
+    uv pip install packaging ninja psutil wheel setuptools
 
     if [ -z "${CUDA_HOME:-}" ]; then
         if [ -d "/usr/local/cuda" ]; then

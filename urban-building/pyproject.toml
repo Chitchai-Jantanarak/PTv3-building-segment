@@ -170,7 +170,7 @@ constraint-dependencies = [
 ]
 
 [tool.uv.extra-build-dependencies]
-flash-attn = ["psutil"]
+flash-attn = ["psutil", "wheel", "setuptools"]
 
 # ============================================================
 # Ruff (Linting & Formatting)

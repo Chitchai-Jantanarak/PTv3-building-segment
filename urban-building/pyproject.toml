@@ -83,8 +83,8 @@ dependencies = [
 [project.optional-dependencies]
 # PyTorch and CUDA — install via: uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 torch = [
-    "torch>=2.6,<2.8",
-    "torchvision>=0.21,<0.23",
+    "torch>=2.1.0",
+    "torchvision>=0.16.0",
 ]
 
 
@@ -165,12 +165,12 @@ dev-dependencies = [
 
 # Pins PyTorch to prevent transitive dependency upgrades
 constraint-dependencies = [
-    "torch>=2.6.0,<2.8.0",
-    "torchvision>=0.21.0,<0.23.0",
+    "torch>=2.1.0",
+    "torchvision>=0.16.0",
 ]
 
 [tool.uv.extra-build-dependencies]
-flash-attn = ["psutil"]
+flash-attn = ["psutil", "wheel", "setuptools"]
 
 # ============================================================
 # Ruff (Linting & Formatting)

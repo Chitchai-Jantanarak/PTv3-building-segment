@@ -15,6 +15,34 @@ logger = get_logger("PIPE")
 
 BUILDING_CLASS = 2
 
+# SensatUrban class IDs → ASPRS LAS standard classification codes.
+# Without this mapping, Potree shows wrong class names (e.g. SensatUrban
+# class 2 "Buildings" → LAS class 2 "Ground").
+SENSAT_TO_LAS = {
+    0: 2,   # Ground        → Ground (2)
+    1: 5,   # High Veg      → High Vegetation (5)
+    2: 6,   # Buildings      → Building (6)
+    3: 6,   # Walls          → Building (6)
+    4: 17,  # Bridge         → Bridge Deck (17)
+    5: 2,   # Parking        → Ground (2)
+    6: 10,  # Rail           → Rail (10)
+    7: 11,  # Traffic Roads  → Road Surface (11)
+    8: 1,   # Street Furn.   → Unclassified (1)
+    9: 1,   # Cars           → Unclassified (1)
+    10: 11, # Footpath       → Road Surface (11)
+    11: 1,  # Bikes          → Unclassified (1)
+    12: 9,  # Water          → Water (9)
+}
+
+
+def _remap_labels_to_las(labels: np.ndarray) -> np.ndarray:
+    """Remap SensatUrban class IDs to ASPRS LAS standard codes."""
+    remapped = np.ones_like(labels)  # default: Unclassified (1)
+    for sensat_id, las_id in SENSAT_TO_LAS.items():
+        remapped[labels == sensat_id] = las_id
+    return remapped
+
+
 # FEMA occupancy main classes (sub-classes of building)
 FEMA_MAIN_CLASSES = {
     0: "RES",  # Residential
@@ -130,9 +158,13 @@ def _classify_building_rule_based(
 
 
 def _center_and_infer(engine, features, coords, centroid):
-    """Run one chunk: center coords, infer, de-center xyz outputs."""
+    """Run one chunk: center coords AND features[:,:3], infer, de-center."""
     centered = coords - centroid
-    result = engine({"features": features, "coords": centered})
+    # Center xyz channels in features to match training (_to_tensors centers both)
+    features_centered = features.copy()
+    n_xyz = min(3, features_centered.shape[1], centroid.shape[0])
+    features_centered[:, :n_xyz] -= centroid[:n_xyz]
+    result = engine({"features": features_centered, "coords": centered})
     # De-center any xyz predictions back to world coordinates
     centroid_t = torch.from_numpy(centroid).float()
     for k in list(result.keys()):
@@ -267,19 +299,22 @@ def run_full_inference(cfg: DictConfig) -> None:
     del seg_a_engine, seg_a_result
     torch.cuda.empty_cache()
 
-    seg_a_path = output_dir / "segmented.las"
-    export_las(seg_a_path, xyz=original_xyz, labels=seg_a_labels)
-    logger.info(f"Saved Seg-A output: {seg_a_path}")
-
-    # ── Step 3: Filter buildings ─────────────────────────────────────────
+    # ── Step 3: Filter buildings (using SensatUrban IDs) ────────────────
     building_mask = seg_a_labels == BUILDING_CLASS
+
+    # Remap to ASPRS LAS standard codes for export
+    seg_a_labels_las = _remap_labels_to_las(seg_a_labels)
+
+    seg_a_path = output_dir / "segmented.las"
+    export_las(seg_a_path, xyz=original_xyz, labels=seg_a_labels_las)
+    logger.info(f"Saved Seg-A output: {seg_a_path}")
     n_building = building_mask.sum()
     logger.info(f"Building points: {n_building:,} / {n_total:,}")
 
     if n_building == 0:
         logger.warning("No building points found. Skipping Seg-B and HAZUS stages.")
         # Still produce merged output (same as segmented)
-        write_las(output_dir / "merged.las", xyz=original_xyz, labels=seg_a_labels)
+        write_las(output_dir / "merged.las", xyz=original_xyz, labels=seg_a_labels_las)
         logger.info("Pipeline complete (no buildings detected)")
         return
 
@@ -371,7 +406,7 @@ def run_full_inference(cfg: DictConfig) -> None:
     write_las(
         hazus_las_path,
         xyz=building_xyz,
-        labels=np.full(len(building_xyz), BUILDING_CLASS, dtype=np.int32),
+        labels=np.full(len(building_xyz), SENSAT_TO_LAS[BUILDING_CLASS], dtype=np.int32),
         extra_dims={
             "cluster_id": hazus_point_cluster,
             "occupancy": hazus_point_occ,
@@ -409,7 +444,7 @@ def run_full_inference(cfg: DictConfig) -> None:
         merged_path,
         xyz=merged_xyz,
         rgb=merged_rgb,
-        labels=seg_a_labels,
+        labels=seg_a_labels_las,
         extra_dims={
             "cluster_id": hazus_cluster_full,
             "occupancy": hazus_occ_full,

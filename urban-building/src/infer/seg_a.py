@@ -44,7 +44,7 @@ def run_seg_a_inference(
     from src.core.io import read_las, read_ply
     from src.core.preprocessing import Preprocessor
     from src.infer.export import export_las
-    from src.infer.pipeline import _remap_labels_to_las
+    from src.infer.pipeline import _get_las_mapping, _remap_labels_to_las
 
     engine = SegAInference(cfg, checkpoint_path)
 
@@ -70,9 +70,10 @@ def run_seg_a_inference(
 
     result = engine.predict(data)
 
-    # Remap SensatUrban IDs to ASPRS LAS standard codes
+    # Remap internal class IDs to ASPRS LAS standard codes
     labels = result["predictions"].numpy()
-    labels_las = _remap_labels_to_las(labels)
+    las_mapping = _get_las_mapping(cfg)
+    labels_las = _remap_labels_to_las(labels, las_mapping)
 
     export_las(
         output_path,

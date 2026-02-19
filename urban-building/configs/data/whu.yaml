@@ -26,3 +26,15 @@ labels:
 num_classes: 9
 building_class: 2
 max_points: 80000
+
+# Simplified class ID → ASPRS LAS standard codes (for export to LAS/Potree)
+las_class_mapping:
+  0: 2    # Ground           → Ground
+  1: 5    # Vegetation        → High Vegetation
+  2: 6    # Building          → Building
+  3: 1    # Pole              → Unclassified
+  4: 1    # Vehicle           → Unclassified
+  5: 1    # Pedestrian        → Unclassified
+  6: 1    # Street Furniture  → Unclassified
+  7: 1    # Infrastructure    → Unclassified
+  8: 1    # Others            → Unclassified

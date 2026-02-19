@@ -15,31 +15,25 @@ logger = get_logger("PIPE")
 
 BUILDING_CLASS = 2
 
-# SensatUrban class IDs → ASPRS LAS standard classification codes.
-# Without this mapping, Potree shows wrong class names (e.g. SensatUrban
-# class 2 "Buildings" → LAS class 2 "Ground").
-SENSAT_TO_LAS = {
-    0: 2,   # Ground        → Ground (2)
-    1: 5,   # High Veg      → High Vegetation (5)
-    2: 6,   # Buildings      → Building (6)
-    3: 6,   # Walls          → Building (6)
-    4: 17,  # Bridge         → Bridge Deck (17)
-    5: 2,   # Parking        → Ground (2)
-    6: 10,  # Rail           → Rail (10)
-    7: 11,  # Traffic Roads  → Road Surface (11)
-    8: 1,   # Street Furn.   → Unclassified (1)
-    9: 1,   # Cars           → Unclassified (1)
-    10: 11, # Footpath       → Road Surface (11)
-    11: 1,  # Bikes          → Unclassified (1)
-    12: 9,  # Water          → Water (9)
-}
+
+def _get_las_mapping(cfg: DictConfig) -> dict[int, int] | None:
+    """Read LAS class mapping from data config, return None if not defined."""
+    mapping_cfg = cfg.data.get("las_class_mapping", None)
+    if mapping_cfg is None:
+        return None
+    return {int(k): int(v) for k, v in mapping_cfg.items()}
 
 
-def _remap_labels_to_las(labels: np.ndarray) -> np.ndarray:
-    """Remap SensatUrban class IDs to ASPRS LAS standard codes."""
+def _remap_labels_to_las(
+    labels: np.ndarray,
+    mapping: dict[int, int] | None,
+) -> np.ndarray:
+    """Remap internal class IDs to ASPRS LAS standard codes using config mapping."""
+    if mapping is None:
+        return labels
     remapped = np.ones_like(labels)  # default: Unclassified (1)
-    for sensat_id, las_id in SENSAT_TO_LAS.items():
-        remapped[labels == sensat_id] = las_id
+    for internal_id, las_id in mapping.items():
+        remapped[labels == internal_id] = las_id
     return remapped
 
 
@@ -252,6 +246,10 @@ def run_full_inference(cfg: DictConfig) -> None:
     output_dir = Path(cfg.task.get("output_dir", "outputs/pipeline"))
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Read dataset-specific settings from config
+    las_mapping = _get_las_mapping(cfg)
+    building_class = cfg.data.get("building_class", BUILDING_CLASS)
+
     ckpt_cfg = cfg.task.get("checkpoints", {})
     seg_a_ckpt = Path(ckpt_cfg.get("seg_a", "checkpoints/seg_a/best.pt"))
     seg_b_geom_ckpt = Path(
@@ -299,11 +297,11 @@ def run_full_inference(cfg: DictConfig) -> None:
     del seg_a_engine, seg_a_result
     torch.cuda.empty_cache()
 
-    # ── Step 3: Filter buildings (using SensatUrban IDs) ────────────────
-    building_mask = seg_a_labels == BUILDING_CLASS
+    # ── Step 3: Filter buildings (using internal dataset IDs) ───────────
+    building_mask = seg_a_labels == building_class
 
     # Remap to ASPRS LAS standard codes for export
-    seg_a_labels_las = _remap_labels_to_las(seg_a_labels)
+    seg_a_labels_las = _remap_labels_to_las(seg_a_labels, las_mapping)
 
     seg_a_path = output_dir / "segmented.las"
     export_las(seg_a_path, xyz=original_xyz, labels=seg_a_labels_las)
@@ -406,7 +404,11 @@ def run_full_inference(cfg: DictConfig) -> None:
     write_las(
         hazus_las_path,
         xyz=building_xyz,
-        labels=np.full(len(building_xyz), SENSAT_TO_LAS[BUILDING_CLASS], dtype=np.int32),
+        labels=np.full(
+            len(building_xyz),
+            las_mapping.get(building_class, 6) if las_mapping else 6,
+            dtype=np.int32,
+        ),
         extra_dims={
             "cluster_id": hazus_point_cluster,
             "occupancy": hazus_point_occ,

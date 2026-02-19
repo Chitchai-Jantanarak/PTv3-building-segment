@@ -159,16 +159,19 @@ def build_optimizer(cfg: DictConfig, model: nn.Module) -> Optimizer:
     lr = cfg.task.optimizer.lr
     weight_decay = cfg.task.optimizer.weight_decay
 
+    # Only optimize trainable parameters (skip frozen encoder params etc.)
+    params = [p for p in model.parameters() if p.requires_grad]
+
     if opt_type == "adamw":
-        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+        return torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
     elif opt_type == "adam":
-        return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+        return torch.optim.Adam(params, lr=lr, weight_decay=weight_decay)
     elif opt_type == "sgd":
         return torch.optim.SGD(
-            model.parameters(), lr=lr, weight_decay=weight_decay, momentum=0.9
+            params, lr=lr, weight_decay=weight_decay, momentum=0.9
         )
     else:
-        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+        return torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
 
 
 def build_scheduler(cfg: DictConfig, optimizer: Optimizer) -> Optional[_LRScheduler]:

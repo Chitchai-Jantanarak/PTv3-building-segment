@@ -22,3 +22,19 @@ labels:
 num_classes: 13
 building_class: 2
 max_points: 80000
+
+# Internal class ID → ASPRS LAS standard codes (for export to LAS/Potree)
+las_class_mapping:
+  0: 2    # Ground        → Ground
+  1: 5    # High Veg      → High Vegetation
+  2: 6    # Buildings      → Building
+  3: 6    # Walls          → Building
+  4: 17   # Bridge         → Bridge Deck
+  5: 2    # Parking        → Ground
+  6: 10   # Rail           → Rail
+  7: 11   # Traffic Roads  → Road Surface
+  8: 1    # Street Furn.   → Unclassified
+  9: 1    # Cars           → Unclassified
+  10: 11  # Footpath       → Road Surface
+  11: 1   # Bikes          → Unclassified
+  12: 9   # Water          → Water

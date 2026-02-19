@@ -11,6 +11,7 @@ pseudo_labels:
 loss:
   type: focal
   gamma: 2.0
+  class_weights: true
 
 optimizer:
   type: adamw

@@ -80,7 +80,7 @@ def train_seg_b_v2(cfg: DictConfig) -> None:
     optimizer = build_optimizer(cfg, model)
     scheduler = build_scheduler(cfg, optimizer)
 
-    model = train_loop(
+    train_loop(
         cfg=cfg,
         model=model,
         train_loader=train_loader,

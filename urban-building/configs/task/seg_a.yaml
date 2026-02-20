@@ -4,13 +4,10 @@ model: seg_a
 freeze_encoder: true
 pretrained_encoder: checkpoints/mae/best.pt
 
-pseudo_labels:
-  height_threshold: 2.0
-  planarity_threshold: 0.8
-
 loss:
   type: focal
   gamma: 2.0
+  weight_method: median_freq
 
 optimizer:
   type: adamw

@@ -1,4 +1,5 @@
 # src/train/_base.py
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -10,6 +11,13 @@ from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader
 
 from src.core.utils import Logger, clear_cuda_cache, log_memory, save_ckpt
+
+
+@dataclass
+class TrainResult:
+    model: nn.Module
+    train_losses: list[float] = field(default_factory=list)
+    val_losses: list[float] = field(default_factory=list)
 
 
 def train_epoch(
@@ -83,7 +91,7 @@ def train_loop(
     scheduler: Optional[_LRScheduler],
     criterion: Callable,
     logger: Logger,
-) -> nn.Module:
+) -> TrainResult:
     device = torch.device(cfg.run.device)
     model = model.to(device)
 
@@ -96,6 +104,9 @@ def train_loop(
     patience = cfg.task.get("early_stopping_patience", 0)
     no_improve = 0
     best_loss = float("inf")
+
+    train_losses = []
+    val_losses = []
 
     if train_loader is None:
         raise ValueError("No training data available. Check data path and file format.")
@@ -114,12 +125,14 @@ def train_loop(
         )
 
         logger.epoch(epoch, f"Train Loss: {train_loss:.6f}")
+        train_losses.append(train_loss)
 
         if val_loader is not None:
             val_loss = validate_epoch(
                 model, val_loader, criterion, device, use_amp=use_amp
             )
             logger.epoch(epoch, f"Val Loss: {val_loss:.6f}")
+            val_losses.append(val_loss)
             current_loss = val_loss
         else:
             current_loss = train_loss
@@ -151,7 +164,7 @@ def train_loop(
             )
             break
 
-    return model
+    return TrainResult(model=model, train_losses=train_losses, val_losses=val_losses)
 
 
 def build_optimizer(cfg: DictConfig, model: nn.Module) -> Optimizer:
@@ -159,16 +172,19 @@ def build_optimizer(cfg: DictConfig, model: nn.Module) -> Optimizer:
     lr = cfg.task.optimizer.lr
     weight_decay = cfg.task.optimizer.weight_decay
 
+    # Only optimize trainable parameters (skip frozen encoder params etc.)
+    params = [p for p in model.parameters() if p.requires_grad]
+
     if opt_type == "adamw":
-        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+        return torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
     elif opt_type == "adam":
-        return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+        return torch.optim.Adam(params, lr=lr, weight_decay=weight_decay)
     elif opt_type == "sgd":
         return torch.optim.SGD(
-            model.parameters(), lr=lr, weight_decay=weight_decay, momentum=0.9
+            params, lr=lr, weight_decay=weight_decay, momentum=0.9
         )
     else:
-        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+        return torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
 
 
 def build_scheduler(cfg: DictConfig, optimizer: Optimizer) -> Optional[_LRScheduler]:

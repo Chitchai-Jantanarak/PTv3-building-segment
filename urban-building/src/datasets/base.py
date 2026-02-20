@@ -220,10 +220,16 @@ class BasePointCloudDataset(Dataset, ABC):
 
         coords = data["coords"]
         centroid = coords.mean(axis=0)
-        coords = coords - centroid
+        coords_centered = coords - centroid
 
-        result["points"] = torch.from_numpy(data["features"]).float()
-        result["coords"] = torch.from_numpy(coords).float()
+        # Center xyz channels in features using same centroid as coords.
+        # rel_z and other non-spatial channels are left untouched.
+        features = data["features"].copy()
+        n_xyz = min(3, features.shape[1], centroid.shape[0])
+        features[:, :n_xyz] -= centroid[:n_xyz]
+
+        result["points"] = torch.from_numpy(features).float()
+        result["coords"] = torch.from_numpy(coords_centered).float()
 
         if "labels" in data:
             result["labels"] = torch.from_numpy(data["labels"]).long()
@@ -252,7 +258,14 @@ class BasePointCloudDataset(Dataset, ABC):
 
             if "labels" in data and data["labels"] is not None:
                 labels = np.asarray(data["labels"])
-                labels = labels[labels >= 0]  # Ignore invalid labels
+
+                if self.class_mapping is not None:
+                    mapped = np.full_like(labels, -1)
+                    for old_label, new_label in self.class_mapping.items():
+                        mapped[labels == old_label] = new_label
+                    labels = mapped
+
+                labels = labels[labels >= 0]
                 labels = labels[labels < self.num_classes]
 
                 for label in labels:
@@ -320,7 +333,11 @@ class SimplePointCloudDataset(BasePointCloudDataset):
         if not split_dir.exists():
             split_dir = self.root
 
-        files = sorted(split_dir.glob("*.pth")) + sorted(split_dir.glob("*.npz"))
+        files = (
+            sorted(split_dir.glob("*.pth"))
+            + sorted(split_dir.glob("*.pt"))
+            + sorted(split_dir.glob("*.npz"))
+        )
         return files
 
     def _get_class_info(

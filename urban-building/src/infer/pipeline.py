@@ -15,6 +15,28 @@ logger = get_logger("PIPE")
 
 BUILDING_CLASS = 2
 
+
+def _get_las_mapping(cfg: DictConfig) -> dict[int, int] | None:
+    """Read LAS class mapping from data config, return None if not defined."""
+    mapping_cfg = cfg.data.get("las_class_mapping", None)
+    if mapping_cfg is None:
+        return None
+    return {int(k): int(v) for k, v in mapping_cfg.items()}
+
+
+def _remap_labels_to_las(
+    labels: np.ndarray,
+    mapping: dict[int, int] | None,
+) -> np.ndarray:
+    """Remap internal class IDs to ASPRS LAS standard codes using config mapping."""
+    if mapping is None:
+        return labels
+    remapped = np.ones_like(labels)  # default: Unclassified (1)
+    for internal_id, las_id in mapping.items():
+        remapped[labels == internal_id] = las_id
+    return remapped
+
+
 # FEMA occupancy main classes (sub-classes of building)
 FEMA_MAIN_CLASSES = {
     0: "RES",  # Residential
@@ -130,9 +152,13 @@ def _classify_building_rule_based(
 
 
 def _center_and_infer(engine, features, coords, centroid):
-    """Run one chunk: center coords, infer, de-center xyz outputs."""
+    """Run one chunk: center coords AND features[:,:3], infer, de-center."""
     centered = coords - centroid
-    result = engine({"features": features, "coords": centered})
+    # Center xyz channels in features to match training (_to_tensors centers both)
+    features_centered = features.copy()
+    n_xyz = min(3, features_centered.shape[1], centroid.shape[0])
+    features_centered[:, :n_xyz] -= centroid[:n_xyz]
+    result = engine({"features": features_centered, "coords": centered})
     # De-center any xyz predictions back to world coordinates
     centroid_t = torch.from_numpy(centroid).float()
     for k in list(result.keys()):
@@ -220,6 +246,10 @@ def run_full_inference(cfg: DictConfig) -> None:
     output_dir = Path(cfg.task.get("output_dir", "outputs/pipeline"))
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Read dataset-specific settings from config
+    las_mapping = _get_las_mapping(cfg)
+    building_class = cfg.data.get("building_class", BUILDING_CLASS)
+
     ckpt_cfg = cfg.task.get("checkpoints", {})
     seg_a_ckpt = Path(ckpt_cfg.get("seg_a", "checkpoints/seg_a/best.pt"))
     seg_b_geom_ckpt = Path(
@@ -267,19 +297,22 @@ def run_full_inference(cfg: DictConfig) -> None:
     del seg_a_engine, seg_a_result
     torch.cuda.empty_cache()
 
-    seg_a_path = output_dir / "segmented.las"
-    export_las(seg_a_path, xyz=original_xyz, labels=seg_a_labels)
-    logger.info(f"Saved Seg-A output: {seg_a_path}")
+    # ── Step 3: Filter buildings (using internal dataset IDs) ───────────
+    building_mask = seg_a_labels == building_class
 
-    # ── Step 3: Filter buildings ─────────────────────────────────────────
-    building_mask = seg_a_labels == BUILDING_CLASS
+    # Remap to ASPRS LAS standard codes for export
+    seg_a_labels_las = _remap_labels_to_las(seg_a_labels, las_mapping)
+
+    seg_a_path = output_dir / "segmented.las"
+    export_las(seg_a_path, xyz=original_xyz, labels=seg_a_labels_las)
+    logger.info(f"Saved Seg-A output: {seg_a_path}")
     n_building = building_mask.sum()
     logger.info(f"Building points: {n_building:,} / {n_total:,}")
 
     if n_building == 0:
         logger.warning("No building points found. Skipping Seg-B and HAZUS stages.")
         # Still produce merged output (same as segmented)
-        write_las(output_dir / "merged.las", xyz=original_xyz, labels=seg_a_labels)
+        write_las(output_dir / "merged.las", xyz=original_xyz, labels=seg_a_labels_las)
         logger.info("Pipeline complete (no buildings detected)")
         return
 
@@ -371,7 +404,11 @@ def run_full_inference(cfg: DictConfig) -> None:
     write_las(
         hazus_las_path,
         xyz=building_xyz,
-        labels=np.full(len(building_xyz), BUILDING_CLASS, dtype=np.int32),
+        labels=np.full(
+            len(building_xyz),
+            las_mapping.get(building_class, 6) if las_mapping else 6,
+            dtype=np.int32,
+        ),
         extra_dims={
             "cluster_id": hazus_point_cluster,
             "occupancy": hazus_point_occ,
@@ -409,7 +446,7 @@ def run_full_inference(cfg: DictConfig) -> None:
         merged_path,
         xyz=merged_xyz,
         rgb=merged_rgb,
-        labels=seg_a_labels,
+        labels=seg_a_labels_las,
         extra_dims={
             "cluster_id": hazus_cluster_full,
             "occupancy": hazus_occ_full,

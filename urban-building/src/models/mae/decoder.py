@@ -12,10 +12,21 @@ class MAEDecoder(nn.Module):
         cfg: DictConfig,
         latent_dim: int,
         output_dim: int = 4,
+        coord_dim: int = 3,
     ):
         super().__init__()
 
         hidden_dim = latent_dim // 2
+
+        # Positional encoding: project 3D coords into latent space
+        self.pos_embed = nn.Sequential(
+            nn.Linear(coord_dim, latent_dim),
+            nn.GELU(),
+            nn.Linear(latent_dim, latent_dim),
+        )
+
+        # Context projection: compress global context for masked tokens
+        self.context_proj = nn.Linear(latent_dim, latent_dim)
 
         self.decoder = nn.Sequential(
             nn.Linear(latent_dim, hidden_dim),
@@ -34,9 +45,14 @@ class MAEDecoder(nn.Module):
         visible_indices: Tensor,
         masked_indices: Tensor,
         n_total: int,
+        coord: Tensor | None = None,
     ) -> Tensor:
         n_encoded = encoded.shape[0]
         n_visible = visible_indices.shape[0]
+
+        # Pool encoder output into global context so masked positions
+        # depend on visible features (gives encoder gradient)
+        global_ctx = self.context_proj(encoded.mean(dim=0, keepdim=True))
 
         full_features = self.mask_token.expand(n_total, -1).clone()
 
@@ -46,6 +62,14 @@ class MAEDecoder(nn.Module):
             full_features[visible_indices[:n_encoded]] = encoded
         else:
             full_features[visible_indices] = encoded[:n_visible]
+
+        # Add global context (broadcast) — encoder gradient flows here
+        full_features = full_features + global_ctx
+
+        # Add coordinate positional encoding so masked tokens know
+        # their spatial location (not all predicting the same value)
+        if coord is not None:
+            full_features = full_features + self.pos_embed(coord)
 
         reconstructed = self.decoder(full_features)
         return reconstructed

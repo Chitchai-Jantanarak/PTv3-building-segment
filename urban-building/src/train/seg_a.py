@@ -1,4 +1,3 @@
-# src/train/seg_a.py
 from omegaconf import DictConfig
 
 from src.core.utils import get_logger, load_pretrained_encoder, set_seed
@@ -17,7 +16,6 @@ def train_seg_a(cfg: DictConfig) -> None:
     model = SegAModel(cfg)
     logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    # Load MAE pretrained encoder weights
     mae_ckpt = cfg.task.get("pretrained_encoder", None)
     if mae_ckpt:
         n_loaded = load_pretrained_encoder(model, mae_ckpt)
@@ -30,7 +28,6 @@ def train_seg_a(cfg: DictConfig) -> None:
     train_loader = build_dataloader(cfg, split="train")
     val_loader = build_dataloader(cfg, split="val")
 
-    # Compute class weights from training data to fix class imbalance
     alpha = None
     weight_method = cfg.task.loss.get("weight_method", None)
     if weight_method:

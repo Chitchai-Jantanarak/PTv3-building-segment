@@ -84,7 +84,7 @@ def train_seg_a(cfg: DictConfig) -> None:
     device = torch.device(cfg.run.device)
     out_dir = Path(cfg.paths.ckpt_root) / cfg.task.name
     run_evaluation(
-        task="seg_b_color",
+        task="seg_a",
         model=result.model,
         val_loader=val_loader,
         device=device,

@@ -24,12 +24,8 @@ from .io import (
 from .preprocessing import (
     Preprocessor,
     compute_grid_coords,
-    denormalize_features,
-    denormalize_xyz,
     inverse_voxelize,
     load_preprocessed,
-    normalize_features,
-    normalize_xyz,
     preprocess_file,
     voxelize,
 )
@@ -62,10 +58,6 @@ __all__ = [
     "Preprocessor",
     "preprocess_file",
     "load_preprocessed",
-    "normalize_xyz",
-    "denormalize_xyz",
-    "normalize_features",
-    "denormalize_features",
     "set_seed",
     "get_seed",
     "Logger",

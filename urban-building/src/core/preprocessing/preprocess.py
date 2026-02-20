@@ -1,4 +1,3 @@
-# src/core/preprocessing/preprocess.py
 from pathlib import Path
 from typing import Optional, Union
 
@@ -75,25 +74,6 @@ class Preprocessor:
         data["grid_coords"] = compute_grid_coords(xyz, self.grid_size)
 
         return data
-
-    def normalize_coords(
-        self,
-        xyz: np.ndarray,
-        center: bool = True,
-        scale: bool = True,
-    ) -> np.ndarray:
-        xyz = xyz.copy()
-
-        if center:
-            centroid = xyz.mean(axis=0)
-            xyz = xyz - centroid
-
-        if scale:
-            max_dist = np.abs(xyz).max()
-            if max_dist > 0:
-                xyz = xyz / max_dist
-
-        return xyz
 
 
 def read_h5(path: Union[str, Path]) -> dict[str, np.ndarray]:

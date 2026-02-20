@@ -1,4 +1,3 @@
-# src/core/preprocessing/voxel.py
 from typing import Optional
 
 import numpy as np

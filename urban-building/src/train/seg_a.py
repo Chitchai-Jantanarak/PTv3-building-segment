@@ -1,4 +1,3 @@
-# src/train/seg_a.py
 from omegaconf import DictConfig
 
 from src.core.utils import get_logger, load_pretrained_encoder, set_seed
@@ -6,29 +5,6 @@ from src.datasets import build_dataloader
 from src.losses import focal_loss
 from src.models.seg_heads import SegAModel, generate_pseudo_labels
 from src.train._base import build_optimizer, build_scheduler, train_loop
-
-
-def seg_a_criterion(model, batch, device):
-    feat = batch["points"].to(device)
-    coord = batch["coords"].to(device)
-    batch_idx = batch["batch"].to(device)
-
-    if "labels" in batch and batch["labels"] is not None:
-        labels = batch["labels"].to(device)
-    else:
-        rel_z = feat[:, 3]
-        labels = generate_pseudo_labels(coord, rel_z)
-
-    output = model(feat, coord, batch_idx)
-    logits = output["logits"]
-    n_classes = logits.shape[-1]
-
-    ignore_index = -100
-    invalid = (labels < 0) | (labels >= n_classes)
-    labels[invalid] = ignore_index
-
-    loss = focal_loss(logits, labels, gamma=2.0, ignore_index=ignore_index)
-    return loss
 
 
 def train_seg_a(cfg: DictConfig) -> None:
@@ -40,7 +16,6 @@ def train_seg_a(cfg: DictConfig) -> None:
     model = SegAModel(cfg)
     logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    # Load MAE pretrained encoder weights
     mae_ckpt = cfg.task.get("pretrained_encoder", None)
     if mae_ckpt:
         n_loaded = load_pretrained_encoder(model, mae_ckpt)
@@ -53,6 +28,42 @@ def train_seg_a(cfg: DictConfig) -> None:
     train_loader = build_dataloader(cfg, split="train")
     val_loader = build_dataloader(cfg, split="val")
 
+    alpha = None
+    weight_method = cfg.task.loss.get("weight_method", None)
+    if weight_method:
+        dataset = train_loader.dataset
+        if hasattr(dataset, "get_class_weights"):
+            alpha = dataset.get_class_weights(method=weight_method)
+            logger.info(f"Class weights ({weight_method}): {alpha.tolist()}")
+        else:
+            logger.warning("Dataset does not support get_class_weights(), training without class weights")
+
+    gamma = cfg.task.loss.get("gamma", 2.0)
+
+    def criterion(model, batch, device):
+        feat = batch["points"].to(device)
+        coord = batch["coords"].to(device)
+        batch_idx = batch["batch"].to(device)
+
+        if "labels" in batch and batch["labels"] is not None:
+            labels = batch["labels"].to(device)
+        else:
+            rel_z = feat[:, 3]
+            labels = generate_pseudo_labels(coord, rel_z)
+
+        output = model(feat, coord, batch_idx)
+        logits = output["logits"]
+        n_classes = logits.shape[-1]
+
+        ignore_index = -100
+        labels = labels.clone()
+        invalid = (labels < 0) | (labels >= n_classes)
+        labels[invalid] = ignore_index
+
+        _alpha = alpha.to(device) if alpha is not None else None
+        loss = focal_loss(logits, labels, alpha=_alpha, gamma=gamma, ignore_index=ignore_index)
+        return loss
+
     optimizer = build_optimizer(cfg, model)
     scheduler = build_scheduler(cfg, optimizer)
 
@@ -63,7 +74,7 @@ def train_seg_a(cfg: DictConfig) -> None:
         val_loader=val_loader,
         optimizer=optimizer,
         scheduler=scheduler,
-        criterion=seg_a_criterion,
+        criterion=criterion,
         logger=logger,
     )
 

@@ -258,7 +258,14 @@ class BasePointCloudDataset(Dataset, ABC):
 
             if "labels" in data and data["labels"] is not None:
                 labels = np.asarray(data["labels"])
-                labels = labels[labels >= 0]  # Ignore invalid labels
+
+                if self.class_mapping is not None:
+                    mapped = np.full_like(labels, -1)
+                    for old_label, new_label in self.class_mapping.items():
+                        mapped[labels == old_label] = new_label
+                    labels = mapped
+
+                labels = labels[labels >= 0]
                 labels = labels[labels < self.num_classes]
 
                 for label in labels:

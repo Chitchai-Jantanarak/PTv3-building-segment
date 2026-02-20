@@ -1,7 +1,3 @@
-# src/train/seg_a.py
-from pathlib import Path
-
-import torch
 from omegaconf import DictConfig
 
 from src.core.utils import get_logger, load_pretrained_encoder, set_seed
@@ -11,10 +7,40 @@ from src.models.seg_heads import SegAModel, generate_pseudo_labels
 from src.train._base import build_optimizer, build_scheduler, train_loop
 
 
-def _make_criterion(class_weights=None, gamma=2.0):
-    """Build seg-A criterion, optionally with class weights for focal loss."""
+def train_seg_a(cfg: DictConfig) -> None:
+    logger = get_logger("SEGA")
+    logger.info("Starting Seg-A training")
 
-    def seg_a_criterion(model, batch, device):
+    set_seed(cfg.run.seed)
+
+    model = SegAModel(cfg)
+    logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+    mae_ckpt = cfg.task.get("pretrained_encoder", None)
+    if mae_ckpt:
+        n_loaded = load_pretrained_encoder(model, mae_ckpt)
+        logger.info(f"Loaded {n_loaded} encoder weight tensors from MAE: {mae_ckpt}")
+    else:
+        logger.warning("No pretrained_encoder specified — training from scratch!")
+
+    logger.info(f"Encoder frozen: {cfg.task.freeze_encoder}")
+
+    train_loader = build_dataloader(cfg, split="train")
+    val_loader = build_dataloader(cfg, split="val")
+
+    alpha = None
+    weight_method = cfg.task.loss.get("weight_method", None)
+    if weight_method:
+        dataset = train_loader.dataset
+        if hasattr(dataset, "get_class_weights"):
+            alpha = dataset.get_class_weights(method=weight_method)
+            logger.info(f"Class weights ({weight_method}): {alpha.tolist()}")
+        else:
+            logger.warning("Dataset does not support get_class_weights(), training without class weights")
+
+    gamma = cfg.task.loss.get("gamma", 2.0)
+
+    def criterion(model, batch, device):
         feat = batch["points"].to(device)
         coord = batch["coords"].to(device)
         batch_idx = batch["batch"].to(device)
@@ -30,59 +56,18 @@ def _make_criterion(class_weights=None, gamma=2.0):
         n_classes = logits.shape[-1]
 
         ignore_index = -100
+        labels = labels.clone()
         invalid = (labels < 0) | (labels >= n_classes)
         labels[invalid] = ignore_index
 
-        alpha = class_weights.to(device) if class_weights is not None else None
-        loss = focal_loss(
-            logits, labels, alpha=alpha, gamma=gamma, ignore_index=ignore_index
-        )
+        _alpha = alpha.to(device) if alpha is not None else None
+        loss = focal_loss(logits, labels, alpha=_alpha, gamma=gamma, ignore_index=ignore_index)
         return loss
-
-    return seg_a_criterion
-
-
-def train_seg_a(cfg: DictConfig) -> None:
-    logger = get_logger("SEGA")
-    logger.info("Starting Seg-A training")
-
-    set_seed(cfg.run.seed)
-
-    model = SegAModel(cfg)
-
-    n_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    n_total = sum(p.numel() for p in model.parameters())
-    logger.info(f"Model parameters: {n_total:,} total, {n_trainable:,} trainable")
-
-    # Load MAE pretrained encoder weights
-    mae_ckpt = cfg.task.get("pretrained_encoder", None)
-    if mae_ckpt:
-        n_loaded = load_pretrained_encoder(model, mae_ckpt)
-        logger.info(f"Loaded {n_loaded} encoder weight tensors from MAE: {mae_ckpt}")
-    else:
-        logger.warning("No pretrained_encoder specified — training from scratch!")
-
-    logger.info(f"Encoder frozen: {cfg.task.freeze_encoder}")
-
-    train_loader = build_dataloader(cfg, split="train")
-    val_loader = build_dataloader(cfg, split="val")
-
-    # Compute class weights for imbalanced data
-    class_weights = None
-    if cfg.task.loss.get("class_weights", False) and train_loader is not None:
-        try:
-            class_weights = train_loader.dataset.get_class_weights()
-            logger.info(f"Class weights: {class_weights.tolist()}")
-        except Exception as e:
-            logger.warning(f"Could not compute class weights: {e}")
-
-    gamma = cfg.task.loss.get("gamma", 2.0)
-    criterion = _make_criterion(class_weights=class_weights, gamma=gamma)
 
     optimizer = build_optimizer(cfg, model)
     scheduler = build_scheduler(cfg, optimizer)
 
-    result = train_loop(
+    model = train_loop(
         cfg=cfg,
         model=model,
         train_loader=train_loader,
@@ -91,22 +76,6 @@ def train_seg_a(cfg: DictConfig) -> None:
         scheduler=scheduler,
         criterion=criterion,
         logger=logger,
-    )
-
-    # Post-training evaluation
-    from src.eval import run_evaluation
-
-    device = torch.device(cfg.run.device)
-    out_dir = Path(cfg.paths.ckpt_root) / cfg.task.name
-    run_evaluation(
-        task="seg_a",
-        model=result.model,
-        val_loader=val_loader,
-        device=device,
-        out_dir=out_dir,
-        train_losses=result.train_losses,
-        val_losses=result.val_losses,
-        cfg=cfg,
     )
 
     logger.info("Seg-A training complete")

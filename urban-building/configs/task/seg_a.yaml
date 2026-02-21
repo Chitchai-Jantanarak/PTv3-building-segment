@@ -1,7 +1,7 @@
 name: seg_a
 stage: 1
 model: seg_a
-freeze_encoder: true
+freeze_encoder: false
 pretrained_encoder: checkpoints/mae/best.pt
 
 loss:
@@ -19,4 +19,4 @@ scheduler:
   warmup_epochs: 5
 
 epochs: 100
-batch_size: 6
+batch_size: 2

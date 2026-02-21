@@ -39,10 +39,9 @@ class SegAModel(nn.Module):
 
         self.encoder = PTv3Encoder(cfg)
 
-        num_classes = cfg.data.get("num_classes", 13)
         self.head = SegmentationHead(
             in_channels=self.encoder.latent_dim,
-            num_classes=cfg.data.num_classes,
+            num_classes=cfg.data.get("num_classes", 13),
             hidden_dim=256,
         )
 

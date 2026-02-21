@@ -86,7 +86,30 @@ def load_pretrained_encoder(
 
     missing, unexpected = model.load_state_dict(encoder_state, strict=False)
 
-    return len(encoder_state)
+    # Validate: encoder keys we extracted should have been accepted by the model.
+    # `unexpected` = keys we supplied that the model doesn't have.
+    n_loaded = len(encoder_state) - len(unexpected)
+    if unexpected:
+        import logging
+
+        logging.getLogger("checkpoint").warning(
+            f"Encoder loading: {len(unexpected)} unexpected keys "
+            f"(not in model): {unexpected[:5]}"
+        )
+    if missing:
+        import logging
+
+        # missing keys are model params NOT in the checkpoint -- expected for
+        # the seg head, but encoder.* misses indicate a real problem.
+        encoder_missing = [k for k in missing if k.startswith("encoder.")]
+        if encoder_missing:
+            logging.getLogger("checkpoint").warning(
+                f"Encoder loading: {len(encoder_missing)} encoder keys "
+                f"MISSING from checkpoint (weights are random): "
+                f"{encoder_missing[:5]}"
+            )
+
+    return n_loaded
 
 
 def get_latest_ckpt(path: Union[str, Path]) -> Optional[Path]:

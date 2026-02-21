@@ -2,9 +2,6 @@
 import os
 import sys
 
-# Force spconv to use cuSPARSE (ConvAlgo.Native) instead of the implicit-GEMM
-# tuner.  Must be set before spconv is imported.  The post-construction patch
-# in wrapper.py is the primary fix; this is belt-and-suspenders.
 os.environ.setdefault("SPCONV_ALGO", "native")
 
 import hydra

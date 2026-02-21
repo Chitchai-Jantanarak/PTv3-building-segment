@@ -20,17 +20,6 @@ from src.models.encoders.ptv3.point import (  # noqa: E402
 
 
 def _force_native_algo(model: nn.Module) -> None:
-    """Override every spconv layer to use ConvAlgo.Native (cuSPARSE).
-
-    PTv3 constructs SparseConv/SubMConv layers with the default
-    ConvAlgo.MaskImplicitGemm, which requires the ConvTuner to profile
-    GEMM algorithms for every unique input shape.  When the tuner finds no
-    suitable algorithm (common for small or irregular validation batches) it
-    raises an assertion error.  Setting algo=ConvAlgo.Native bypasses the
-    tuner entirely and routes through cuSPARSE, which works for all shapes.
-    The env-var SPCONV_ALGO=native is ignored after layer construction, so
-    this post-construction patch is the reliable fix.
-    """
     try:
         from spconv.core import ConvAlgo
 

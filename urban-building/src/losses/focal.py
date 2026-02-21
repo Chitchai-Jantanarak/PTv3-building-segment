@@ -16,20 +16,30 @@ def focal_loss(
     ignore_index: int = -100,
 ) -> Tensor:
     n_classes = pred.shape[-1]
+    flat_pred = pred.view(-1, n_classes)
+    flat_target = target.view(-1)
 
-    ce_loss = F.cross_entropy(
-        pred.view(-1, n_classes),
-        target.view(-1),
-        weight=alpha,
+    # Compute pt from UNWEIGHTED cross-entropy so focal term is not distorted
+    ce_unweighted = F.cross_entropy(
+        flat_pred,
+        flat_target,
         reduction="none",
         ignore_index=ignore_index,
     )
 
-    pt = torch.exp(-ce_loss)
+    pt = torch.exp(-ce_unweighted)
     focal_weight = (1 - pt) ** gamma
-    focal = focal_weight * ce_loss
 
-    valid_mask = target.view(-1) != ignore_index
+    # Apply class-weight alpha separately (per-sample, based on true class)
+    if alpha is not None:
+        # Clamp target to valid range for gathering (ignore_index -> 0, masked later)
+        safe_target = flat_target.clamp(min=0, max=n_classes - 1)
+        alpha_t = alpha.to(flat_pred.device).gather(0, safe_target)
+        focal = alpha_t * focal_weight * ce_unweighted
+    else:
+        focal = focal_weight * ce_unweighted
+
+    valid_mask = flat_target != ignore_index
     focal = focal[valid_mask]
 
     if reduction == "mean":

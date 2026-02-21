@@ -254,7 +254,10 @@ class BasePointCloudDataset(Dataset, ABC):
 
         for idx in range(len(self)):
             file_path = self.file_list[idx]
-            data = torch.load(file_path, map_location="cpu", weights_only=False)
+            if file_path.suffix == ".npz":
+                data = np.load(file_path, allow_pickle=True)
+            else:
+                data = torch.load(file_path, map_location="cpu", weights_only=False)
 
             if "labels" in data and data["labels"] is not None:
                 labels = np.asarray(data["labels"])

@@ -616,7 +616,8 @@ def build_dataloader(
     if collate is None:
         task_name = task or (cfg.task.name if hasattr(cfg, "task") else "")
         if task_name not in ["fema", "hazus"]:
-            collate = collate_fn
+            max_bp = data_cfg.get("max_batch_points", 500_000)
+            collate = lambda batch, _mbp=max_bp: collate_fn(batch, max_batch_points=_mbp)
 
     if collate is not None:
         loader_kwargs["collate_fn"] = collate

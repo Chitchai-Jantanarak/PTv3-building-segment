@@ -10,7 +10,7 @@ def voxelize(
     labels: Optional[np.ndarray] = None,
     mode: str = "random",
 ) -> dict[str, np.ndarray]:
-    voxel_coords = np.floor(xyz / voxel_size).astype(np.int32)
+    voxel_coords = np.floor(xyz / voxel_size).astype(np.int64)
 
     voxel_coords_min = voxel_coords.min(axis=0)
     voxel_coords = voxel_coords - voxel_coords_min
@@ -92,7 +92,7 @@ def compute_grid_coords(
     xyz: np.ndarray,
     grid_size: float,
 ) -> np.ndarray:
-    return np.floor(xyz / grid_size).astype(np.int32)
+    return np.floor(xyz / grid_size).astype(np.int64)
 
 
 def inverse_voxelize(

@@ -346,14 +346,22 @@ class SimplePointCloudDataset(BasePointCloudDataset):
         return self._class_names, None
 
 
-def collate_fn(batch: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
+def collate_fn(
+    batch: list[dict[str, torch.Tensor]],
+    max_batch_points: int = 500_000,
+) -> dict[str, torch.Tensor]:
     """
     Custom collate function for point cloud batches.
 
     Handles variable-length point clouds by creating batch indices.
+    Caps total points to ``max_batch_points`` to prevent spconv int32
+    overflow in its implicit_gemm kernel (N * C * sizeof(float) < 2^31).
 
     Args:
         batch: List of sample dictionaries
+        max_batch_points: Maximum total points across the batch.
+            Default 500k keeps N*C*4 safely under int32 for the first
+            sparse-conv layer (C=32, 3^3 kernel).
 
     Returns:
         Batched dictionary with:
@@ -365,6 +373,24 @@ def collate_fn(batch: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
             - 'visible'/'visible_coords'/'target'/'target_coords'/'mask':
               (present when SegBDataset provides masking output)
     """
+    # --- cap total points to stay within spconv int32 gemm limit ----------
+    total = sum(s["points"].shape[0] for s in batch)
+    if total > max_batch_points:
+        # Proportionally subsample each sample so every sample contributes
+        ratio = max_batch_points / total
+        capped: list[dict[str, torch.Tensor]] = []
+        for sample in batch:
+            n = sample["points"].shape[0]
+            keep = max(1, int(n * ratio))
+            if keep < n:
+                idx = torch.randperm(n)[:keep].sort().values
+                sample = {
+                    k: v[idx] if isinstance(v, torch.Tensor) and v.shape[0] == n else v
+                    for k, v in sample.items()
+                }
+            capped.append(sample)
+        batch = capped
+
     points_list = []
     coords_list = []
     labels_list = []

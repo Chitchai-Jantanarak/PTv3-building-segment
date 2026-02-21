@@ -172,7 +172,9 @@ def build_optimizer(cfg: DictConfig, model: nn.Module) -> Optimizer:
     lr = cfg.task.optimizer.lr
     weight_decay = cfg.task.optimizer.weight_decay
 
-    # Only optimize trainable parameters (skip frozen encoder params etc.)
+    # Only optimize trainable parameters -- frozen params must NOT receive
+    # weight-decay updates (AdamW applies decay *before* the gradient step,
+    # so even params with requires_grad=False get decayed every step).
     params = [p for p in model.parameters() if p.requires_grad]
 
     if opt_type == "adamw":

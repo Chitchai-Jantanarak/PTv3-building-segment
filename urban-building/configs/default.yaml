@@ -1,8 +1,8 @@
 run:
   seed: 42
   device: cuda
-  precision: fp32
-  deterministic: true
+  precision: fp16
+  deterministic: false
 
 paths:
   data_root: data
@@ -15,7 +15,7 @@ paths:
 
 data:
   grid_size: 0.04
-  max_points: 100000
+  max_points: 80000
   max_batch_points: 500000  # spconv int32 guard: N*C*4 < 2^31 (500k safe for C=32, 3^3 kernel)
   num_workers: 4
   pin_memory: true

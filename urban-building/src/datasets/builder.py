@@ -91,7 +91,11 @@ class SensatUrbanDataset(BasePointCloudDataset):
         if not split_dir.exists():
             split_dir = self.root
 
-        files = sorted(split_dir.glob("*.pth")) + sorted(split_dir.glob("*.npz"))
+        files = (
+            sorted(split_dir.glob("*.pth"))
+            + sorted(split_dir.glob("*.pt"))
+            + sorted(split_dir.glob("*.npz"))
+        )
         return files
 
     def _get_class_info(
@@ -161,7 +165,11 @@ class WHUDataset(BasePointCloudDataset):
         if not mode_dir.exists():
             mode_dir = self.root / self.split
 
-        return sorted(mode_dir.glob("*.pth")) + sorted(mode_dir.glob("*.npz"))
+        return (
+            sorted(mode_dir.glob("*.pth"))
+            + sorted(mode_dir.glob("*.pt"))
+            + sorted(mode_dir.glob("*.npz"))
+        )
 
     def _get_class_info(
         self,
@@ -180,7 +188,7 @@ class LASDataset(BasePointCloudDataset):
         if not las_dir.exists():
             las_dir = self.root
 
-        files = sorted(las_dir.glob("*.pth"))
+        files = sorted(las_dir.glob("*.pth")) + sorted(las_dir.glob("*.pt"))
         return files
 
     def _get_class_info(
@@ -208,11 +216,19 @@ class MAEDataset(BasePointCloudDataset):
     def _load_file_list(self) -> list[Path]:
         split_dir = self.root / self.split
         if split_dir.exists():
-            files = sorted(split_dir.glob("*.pth")) + sorted(split_dir.glob("*.npz"))
+            files = (
+                sorted(split_dir.glob("*.pth"))
+                + sorted(split_dir.glob("*.pt"))
+                + sorted(split_dir.glob("*.npz"))
+            )
             if files:
                 return files
 
-        files = sorted(self.root.glob("*.pth")) + sorted(self.root.glob("*.npz"))
+        files = (
+            sorted(self.root.glob("*.pth"))
+            + sorted(self.root.glob("*.pt"))
+            + sorted(self.root.glob("*.npz"))
+        )
         return files
 
     def _get_class_info(
@@ -258,7 +274,11 @@ class SegADataset(BasePointCloudDataset):
         if not split_dir.exists():
             split_dir = self.root
 
-        return sorted(split_dir.glob("*.pth")) + sorted(split_dir.glob("*.npz"))
+        return (
+            sorted(split_dir.glob("*.pth"))
+            + sorted(split_dir.glob("*.pt"))
+            + sorted(split_dir.glob("*.npz"))
+        )
 
     def _get_class_info(
         self,
@@ -288,11 +308,21 @@ class SegBDataset(BasePointCloudDataset):
     def _load_file_list(self) -> list[Path]:
         """Load files for building inpainting."""
         split_dir = self.root / self.split
-        if not split_dir.exists():
-            split_dir = self.root
+        if split_dir.exists():
+            files = (
+                sorted(split_dir.glob("*.pth"))
+                + sorted(split_dir.glob("*.pt"))
+                + sorted(split_dir.glob("*.npz"))
+            )
+            if files:
+                return files
 
-        files = sorted(split_dir.glob("*.pth")) + sorted(split_dir.glob("*.npz"))
-
+        # Fallback: search root directly
+        files = (
+            sorted(self.root.glob("*.pth"))
+            + sorted(self.root.glob("*.pt"))
+            + sorted(self.root.glob("*.npz"))
+        )
         return files
 
     def _get_class_info(

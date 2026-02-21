@@ -54,6 +54,7 @@ class MAEModel(nn.Module):
             visible_indices=visible_idx,
             masked_indices=masked_idx,
             n_total=feat.shape[0],
+            coord=coord,
         )
 
         return {

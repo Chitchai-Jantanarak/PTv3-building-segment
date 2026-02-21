@@ -67,7 +67,7 @@ def train_seg_a(cfg: DictConfig) -> None:
     optimizer = build_optimizer(cfg, model)
     scheduler = build_scheduler(cfg, optimizer)
 
-    model = train_loop(
+    result = train_loop(
         cfg=cfg,
         model=model,
         train_loader=train_loader,
@@ -76,6 +76,22 @@ def train_seg_a(cfg: DictConfig) -> None:
         scheduler=scheduler,
         criterion=criterion,
         logger=logger,
+    )
+    
+    # Post-training evaluation
+    from src.eval import run_evaluation
+
+    device = torch.device(cfg.run.device)
+    out_dir = Path(cfg.paths.ckpt_root) / cfg.task.name
+    run_evaluation(
+        task="seg_a",
+        model=result.model,
+        val_loader=val_loader,
+        device=device,
+        out_dir=out_dir,
+        train_losses=result.train_losses,
+        val_losses=result.val_losses,
+        cfg=cfg,
     )
 
     logger.info("Seg-A training complete")

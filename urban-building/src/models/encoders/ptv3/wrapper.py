@@ -19,6 +19,17 @@ from src.models.encoders.ptv3.point import (  # noqa: E402
 )
 
 
+def _force_native_algo(model: nn.Module) -> None:
+    try:
+        from spconv.core import ConvAlgo
+
+        for m in model.modules():
+            if hasattr(m, "algo"):
+                m.algo = ConvAlgo.Native
+    except Exception:
+        pass
+
+
 class PTv3Encoder(nn.Module):
     def __init__(self, cfg: DictConfig):
         super().__init__()
@@ -46,6 +57,8 @@ class PTv3Encoder(nn.Module):
 
         self.grid_size = cfg.model.grid_size
         self.latent_dim = cfg.model.dec_channels[0]
+
+        _force_native_algo(self.net)
 
     def forward(
         self,
@@ -100,6 +113,8 @@ class PTv3EncoderOnly(nn.Module):
 
         self.grid_size = cfg.model.grid_size
         self.latent_dim = bottleneck_dim
+
+        _force_native_algo(self.net)
 
     def forward(
         self,

@@ -1,5 +1,8 @@
 # main.py
+import os
 import sys
+
+os.environ.setdefault("SPCONV_ALGO", "native")
 
 import hydra
 from omegaconf import DictConfig

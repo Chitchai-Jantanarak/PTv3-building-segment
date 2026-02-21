@@ -38,7 +38,7 @@ def train_epoch(
     for batch_idx, batch in enumerate(dataloader):
         optimizer.zero_grad()
 
-        with torch.cuda.amp.autocast(enabled=use_amp):
+        with torch.amp.autocast("cuda", enabled=use_amp):
             loss = criterion(model, batch, device)
 
         if scaler is not None:
@@ -74,7 +74,7 @@ def validate_epoch(
 
     with torch.no_grad():
         for batch in dataloader:
-            with torch.cuda.amp.autocast(enabled=use_amp):
+            with torch.amp.autocast("cuda", enabled=use_amp):
                 loss = criterion(model, batch, device)
             total_loss += loss.item()
             n_batches += 1
@@ -99,7 +99,7 @@ def train_loop(
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     use_amp = cfg.run.get("precision", "fp32") != "fp32"
-    scaler = torch.cuda.amp.GradScaler() if use_amp else None
+    scaler = torch.amp.GradScaler("cuda") if use_amp else None
 
     patience = cfg.task.get("early_stopping_patience", 0)
     no_improve = 0

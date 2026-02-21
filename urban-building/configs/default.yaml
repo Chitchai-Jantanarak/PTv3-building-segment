@@ -2,7 +2,7 @@ run:
   seed: 42
   device: cuda
   precision: fp16
-  deterministic: true
+  deterministic: false
 
 paths:
   data_root: data

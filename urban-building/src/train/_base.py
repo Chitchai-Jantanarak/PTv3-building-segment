@@ -139,7 +139,11 @@ def train_loop(
 
         if scheduler is not None:
             scheduler.step()
-            logger.info(f"LR: {scheduler.get_last_lr()[0]:.2e}")
+            last_lrs = scheduler.get_last_lr()
+            if len(last_lrs) > 1:
+                logger.info(f"LR: encoder={last_lrs[0]:.2e}, head={last_lrs[1]:.2e}")
+            else:
+                logger.info(f"LR: {last_lrs[0]:.2e}")
 
         if current_loss < best_loss:
             best_loss = current_loss
@@ -168,25 +172,49 @@ def train_loop(
 
 
 def build_optimizer(cfg: DictConfig, model: nn.Module) -> Optimizer:
-    opt_type = cfg.task.optimizer.type.lower()
-    lr = cfg.task.optimizer.lr
-    weight_decay = cfg.task.optimizer.weight_decay
+    opt_cfg = cfg.task.optimizer
+    opt_type = opt_cfg.type.lower()
+    weight_decay = opt_cfg.weight_decay
 
-    # Only optimize trainable parameters -- frozen params must NOT receive
-    # weight-decay updates (AdamW applies decay *before* the gradient step,
-    # so even params with requires_grad=False get decayed every step).
-    params = [p for p in model.parameters() if p.requires_grad]
+    # Differential LR mode: encoder_lr + head_lr both present in config.
+    # Splits param groups so the pretrained encoder is updated much more
+    # conservatively than the task head, preventing catastrophic forgetting.
+    use_differential = "encoder_lr" in opt_cfg and "head_lr" in opt_cfg
+
+    if use_differential and hasattr(model, "encoder"):
+        encoder_param_ids = {id(p) for p in model.encoder.parameters()}
+        encoder_params = [
+            p for p in model.parameters()
+            if p.requires_grad and id(p) in encoder_param_ids
+        ]
+        head_params = [
+            p for p in model.parameters()
+            if p.requires_grad and id(p) not in encoder_param_ids
+        ]
+        params = [
+            {"params": encoder_params, "lr": opt_cfg.encoder_lr},
+            {"params": head_params, "lr": opt_cfg.head_lr},
+        ]
+        # Use head_lr as the base lr so schedulers scale relative to it
+        base_lr = opt_cfg.head_lr
+    else:
+        # Fallback: single LR for all trainable params (mae, hazus, etc.)
+        # Only optimize trainable parameters -- frozen params must NOT receive
+        # weight-decay updates (AdamW applies decay *before* the gradient step,
+        # so even params with requires_grad=False get decayed every step).
+        params = [p for p in model.parameters() if p.requires_grad]
+        base_lr = opt_cfg.lr
 
     if opt_type == "adamw":
-        return torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
+        return torch.optim.AdamW(params, lr=base_lr, weight_decay=weight_decay)
     elif opt_type == "adam":
-        return torch.optim.Adam(params, lr=lr, weight_decay=weight_decay)
+        return torch.optim.Adam(params, lr=base_lr, weight_decay=weight_decay)
     elif opt_type == "sgd":
         return torch.optim.SGD(
-            params, lr=lr, weight_decay=weight_decay, momentum=0.9
+            params, lr=base_lr, weight_decay=weight_decay, momentum=0.9
         )
     else:
-        return torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
+        return torch.optim.AdamW(params, lr=base_lr, weight_decay=weight_decay)
 
 
 def build_scheduler(cfg: DictConfig, optimizer: Optimizer) -> Optional[_LRScheduler]:

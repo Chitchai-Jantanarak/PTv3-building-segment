@@ -14,7 +14,8 @@ loss:
 
 optimizer:
   type: adamw
-  lr: 1e-4
+  encoder_lr: 2e-6   # 1/50 of head_lr — chamfer gradients are large, encoder needs extra protection
+  head_lr: 1e-4
   weight_decay: 0.05
 
 scheduler:

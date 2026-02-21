@@ -11,7 +11,8 @@ loss:
 
 optimizer:
   type: adamw
-  lr: 5e-5
+  encoder_lr: 5e-6   # 1/10 of head_lr — protect pretrained MAE encoder
+  head_lr: 5e-5
   weight_decay: 0.01
 
 scheduler:

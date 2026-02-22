@@ -6,9 +6,9 @@ pretrained_encoder: checkpoints/mae/best.pt
 
 loss:
   type: focal
-  gamma: 3.0
-  weight_method: inverse_freq
-  building_boost: 3.0
+  gamma: 2.0
+  weight_method: sqrt_inverse_freq
+  building_boost: 1.5
   building_class: 2
 
 optimizer:

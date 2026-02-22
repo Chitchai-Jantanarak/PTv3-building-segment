@@ -6,18 +6,22 @@ pretrained_encoder: checkpoints/mae/best.pt
 
 loss:
   type: focal
-  gamma: 2.0
-  weight_method: median_freq
+  gamma: 3.0              # up from 2.0 — harder penalization of easy correct preds,
+                          # forces more attention on hard Buildings↔High-Veg confusion
+  weight_method: inverse_freq   # stronger than median_freq: Buildings weight ∝ 1/count
+  building_boost: 3.0     # multiply building class weight by 3x on top of freq weighting
+  building_class: 2       # internal class ID for buildings (matches sensat config)
 
 optimizer:
   type: adamw
-  encoder_lr: 5e-6   # 1/10 of head_lr — protect pretrained MAE encoder
-  head_lr: 5e-5
+  encoder_lr: 2e-5        # up from 5e-6 — encoder needs to adapt MAE features more
+  head_lr: 2e-4           # up from 5e-5 — head was underfitting (train loss still dropping)
   weight_decay: 0.01
 
 scheduler:
   type: cosine
-  warmup_epochs: 5
+  warmup_epochs: 3        # down from 5 — less wasted compute at near-zero LR
 
-epochs: 100
+epochs: 150
+early_stopping_patience: 15   # stops ~epoch 75 if val plateaus, avoids 40-epoch overfit tail
 batch_size: 2

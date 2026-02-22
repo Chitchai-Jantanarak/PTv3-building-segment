@@ -38,6 +38,21 @@ def train_seg_a(cfg: DictConfig) -> None:
         if hasattr(dataset, "get_class_weights"):
             alpha = dataset.get_class_weights(method=weight_method)
             logger.info(f"Class weights ({weight_method}): {alpha.tolist()}")
+
+            # Building-focused boost: multiply building class weight by a scalar factor
+            # so the model is penalized harder for every missed building point.
+            # This directly addresses Buildings→High-Vegetation confusion where 44% of
+            # building points are misclassified as vegetation.
+            building_boost = cfg.task.loss.get("building_boost", 1.0)
+            if building_boost != 1.0:
+                building_cls = cfg.task.loss.get("building_class", 2)
+                alpha[building_cls] *= building_boost
+                # Renormalize so the mean weight stays at 1.0 (preserves gradient scale)
+                alpha = alpha / alpha.mean()
+                logger.info(
+                    f"Building class {building_cls} weight boosted {building_boost}x → "
+                    f"final weights: {alpha.tolist()}"
+                )
         else:
             logger.warning("Dataset does not support get_class_weights(), training without class weights")
 

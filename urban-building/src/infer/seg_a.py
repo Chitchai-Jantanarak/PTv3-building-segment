@@ -44,7 +44,11 @@ def run_seg_a_inference(
     from src.core.io import read_las, read_ply
     from src.core.preprocessing import Preprocessor
     from src.infer.export import export_las
-    from src.infer.pipeline import _get_las_mapping, _remap_labels_to_las
+    from src.infer.pipeline import (
+        _chunked_inference,
+        _get_las_mapping,
+        _remap_labels_to_las,
+    )
 
     engine = SegAInference(cfg, checkpoint_path)
 
@@ -59,16 +63,12 @@ def run_seg_a_inference(
     preprocessor = Preprocessor(cfg)
     data = preprocessor.process(data, voxelize_data=False)
 
-    # Center features[:,:3] to match training behavior
     coords = data["xyz"]
-    centroid = coords.mean(axis=0)
-    data["xyz"] = coords - centroid
-    features = data["features"].copy()
-    n_xyz = min(3, features.shape[1], centroid.shape[0])
-    features[:, :n_xyz] -= centroid[:n_xyz]
-    data["features"] = features
+    features = data["features"]
 
-    result = engine.predict(data)
+    # chunk_size mirrors pipeline: per-chunk centering avoids one giant allocation
+    chunk_size = cfg.data.get("max_points", 100_000)
+    result = _chunked_inference(engine, features, coords, chunk_size)
 
     # Remap internal class IDs to ASPRS LAS standard codes
     labels = result["predictions"].numpy()

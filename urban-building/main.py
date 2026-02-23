@@ -1,6 +1,7 @@
 # main.py
 import os
 import sys
+from pathlib import Path
 
 os.environ.setdefault("SPCONV_ALGO", "native")
 
@@ -27,7 +28,11 @@ def check_dependencies() -> bool:
 
         logger.info("spconv: OK")
     except ImportError:
-        logger.error("spconv not installed")
+        logger.error("spconv not installed. Install: pip install spconv-cu118 (or cu120/cu121 to match your CUDA)")
+        return False
+    except Exception as e:
+        logger.error(f"spconv failed to load (likely a CUDA/build mismatch): {e}")
+        logger.error("Try: pip uninstall spconv cumm -y && pip install spconv-cu120  # match your CUDA version")
         return False
 
     try:
@@ -72,9 +77,17 @@ def dispatch_task(cfg: DictConfig) -> None:
 
         train_hazus(cfg)
     elif task_name == "infer":
-        from src.infer.pipeline import run_full_inference
+        target = cfg.task.get("target", "pipeline")
+        if target == "seg_a":
+            from src.infer.seg_a import run_seg_a_inference
 
-        run_full_inference(cfg)
+            ckpt = cfg.task.checkpoints.get("seg_a", "checkpoints/seg_a/best.pth")
+            out = Path(cfg.task.output_dir) / "segmented.las"
+            run_seg_a_inference(cfg, cfg.task.input_path, out, ckpt)
+        else:
+            from src.infer.pipeline import run_full_inference
+
+            run_full_inference(cfg)
     else:
         logger.error(f"Unknown task: {task_name}")
         raise ValueError(f"Unknown task: {task_name}")

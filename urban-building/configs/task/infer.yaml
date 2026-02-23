@@ -1,10 +1,11 @@
 name: infer
 mode: infer
 
+target: seg_a
+
 input_path: null
 output_dir: output/infer
 
-# Keys required by model constructors during inference
 freeze_encoder: false
 loss:
   weights:
@@ -20,3 +21,4 @@ hazus:
   use_model: false
   dbscan_eps: 1.5
   dbscan_min_pts: 200
+

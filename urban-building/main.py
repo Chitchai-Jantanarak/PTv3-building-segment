@@ -28,7 +28,11 @@ def check_dependencies() -> bool:
 
         logger.info("spconv: OK")
     except ImportError:
-        logger.error("spconv not installed")
+        logger.error("spconv not installed. Install: pip install spconv-cu118 (or cu120/cu121 to match your CUDA)")
+        return False
+    except Exception as e:
+        logger.error(f"spconv failed to load (likely a CUDA/build mismatch): {e}")
+        logger.error("Try: pip uninstall spconv cumm -y && pip install spconv-cu120  # match your CUDA version")
         return False
 
     try:

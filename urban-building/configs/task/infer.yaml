@@ -12,9 +12,9 @@ loss:
     color: 0.3
 
 checkpoints:
-  seg_a: checkpoints/seg_a/best.pt
-  seg_b_geom: checkpoints/seg_b_geom/best.pt
-  seg_b_color: checkpoints/seg_b_color/best.pt
+  seg_a: checkpoints/seg_a/best.pth
+  seg_b_geom: checkpoints/seg_b_geom/best.pth
+  seg_b_color: checkpoints/seg_b_color/best.pth
 
 hazus:
   use_model: false

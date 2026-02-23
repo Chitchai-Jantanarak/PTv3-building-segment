@@ -68,7 +68,9 @@ def run_seg_a_inference(
     features[:, :n_xyz] -= centroid[:n_xyz]
     data["features"] = features
 
-    result = engine.predict(data)
+    result = engine.predict(
+        {"features": data["features"], "coords": data["xyz"]}
+    )
 
     # Remap internal class IDs to ASPRS LAS standard codes
     labels = result["predictions"].numpy()

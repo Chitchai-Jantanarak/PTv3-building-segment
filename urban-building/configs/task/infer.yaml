@@ -1,6 +1,9 @@
 name: infer
 mode: infer
 
+# Which stage to run: seg_a | pipeline (seg_a + seg_b + hazus)
+target: seg_a
+
 input_path: null
 output_dir: output/infer
 

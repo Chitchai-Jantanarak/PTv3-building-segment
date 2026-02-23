@@ -3,6 +3,9 @@ stage: 1
 model: seg_a
 freeze_encoder: false
 pretrained_encoder: checkpoints/mae/best.pt
+# Set true to concatenate RGB (3ch) to encoder latent before the head.
+# Encoder stays 4-channel so MAE weights load cleanly.
+use_rgb: false
 
 loss:
   type: focal

@@ -39,8 +39,13 @@ class SegAModel(nn.Module):
 
         self.encoder = PTv3Encoder(cfg)
 
+        # RGB (3ch) can be concatenated to encoder latent before the head.
+        # Encoder stays 4-channel so MAE weights load cleanly.
+        self.use_rgb = cfg.task.get("use_rgb", False)
+        rgb_dim = 3 if self.use_rgb else 0
+
         self.head = SegmentationHead(
-            in_channels=self.encoder.latent_dim,
+            in_channels=self.encoder.latent_dim + rgb_dim,
             num_classes=cfg.data.get("num_classes", 13),
             hidden_dim=256,
         )
@@ -63,9 +68,19 @@ class SegAModel(nn.Module):
         feat: Tensor,
         coord: Tensor,
         batch: Optional[Tensor] = None,
+        rgb: Optional[Tensor] = None,
     ) -> dict[str, Tensor]:
         encoded = self.encoder(feat, coord, batch)
-        logits = self.head(encoded)
+
+        if self.use_rgb and rgb is not None:
+            # Normalize to [0, 1] — handles both 0-255 and already-normalised inputs
+            if rgb.max() > 1.0:
+                rgb = rgb / 255.0
+            combined = torch.cat([encoded, rgb], dim=-1)
+        else:
+            combined = encoded
+
+        logits = self.head(combined)
 
         return {
             "logits": logits,
@@ -77,8 +92,9 @@ class SegAModel(nn.Module):
         feat: Tensor,
         coord: Tensor,
         batch: Optional[Tensor] = None,
+        rgb: Optional[Tensor] = None,
     ) -> Tensor:
-        output = self.forward(feat, coord, batch)
+        output = self.forward(feat, coord, batch, rgb=rgb)
         return torch.argmax(output["logits"], dim=-1)
 
 

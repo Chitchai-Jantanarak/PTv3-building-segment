@@ -20,11 +20,12 @@ class SegAInference(InferenceEngine):
         feat = data["features"]
         coord = data["coords"]
         batch = data.get("batch")
+        rgb = data.get("rgb")
 
         if batch is None:
             batch = torch.zeros(feat.shape[0], dtype=torch.long, device=self.device)
 
-        output = self.model(feat, coord, batch)
+        output = self.model(feat, coord, batch, rgb=rgb)
         predictions = torch.argmax(output["logits"], dim=-1)
         probs = torch.softmax(output["logits"], dim=-1)
 
@@ -65,10 +66,11 @@ def run_seg_a_inference(
 
     coords = data["xyz"]
     features = data["features"]
+    rgb = data.get("rgb")
 
     # chunk_size mirrors pipeline: per-chunk centering avoids one giant allocation
     chunk_size = cfg.data.get("max_points", 100_000)
-    result = _chunked_inference(engine, features, coords, chunk_size)
+    result = _chunked_inference(engine, features, coords, chunk_size, rgb=rgb)
 
     # Remap internal class IDs to ASPRS LAS standard codes
     labels = result["predictions"].numpy()

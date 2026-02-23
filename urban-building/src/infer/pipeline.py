@@ -151,14 +151,17 @@ def _classify_building_rule_based(
     }
 
 
-def _center_and_infer(engine, features, coords, centroid):
+def _center_and_infer(engine, features, coords, centroid, rgb=None):
     """Run one chunk: center coords AND features[:,:3], infer, de-center."""
     centered = coords - centroid
     # Center xyz channels in features to match training (_to_tensors centers both)
     features_centered = features.copy()
     n_xyz = min(3, features_centered.shape[1], centroid.shape[0])
     features_centered[:, :n_xyz] -= centroid[:n_xyz]
-    result = engine({"features": features_centered, "coords": centered})
+    data = {"features": features_centered, "coords": centered}
+    if rgb is not None:
+        data["rgb"] = rgb
+    result = engine(data)
     # De-center any xyz predictions back to world coordinates
     centroid_t = torch.from_numpy(centroid).float()
     for k in list(result.keys()):
@@ -167,11 +170,12 @@ def _center_and_infer(engine, features, coords, centroid):
     return result
 
 
-def _chunked_inference(engine, features, coords, chunk_size):
+def _chunked_inference(engine, features, coords, chunk_size, rgb=None):
     """Run inference in chunks with per-chunk coordinate centering.
 
     Pre-allocates numpy output arrays and fills per-chunk to avoid
     accumulating all chunk tensors in RAM (critical for large scenes).
+    rgb is optional: when provided it is sliced per-chunk alongside features.
     """
     n = len(coords)
 
@@ -180,10 +184,12 @@ def _chunked_inference(engine, features, coords, chunk_size):
         coords = coords.numpy()
     if isinstance(features, torch.Tensor):
         features = features.numpy()
+    if isinstance(rgb, torch.Tensor):
+        rgb = rgb.numpy()
 
     if n <= chunk_size:
         centroid = coords.mean(axis=0).astype(np.float32)
-        return _center_and_infer(engine, features, coords, centroid)
+        return _center_and_infer(engine, features, coords, centroid, rgb=rgb)
 
     n_chunks = (n + chunk_size - 1) // chunk_size
     logger.info(f"Chunked inference: {n:,} pts -> {n_chunks} chunks of {chunk_size:,}")
@@ -192,7 +198,8 @@ def _chunked_inference(engine, features, coords, chunk_size):
     end0 = min(chunk_size, n)
     c0 = coords[:end0]
     centroid = c0.mean(axis=0).astype(np.float32)
-    first_result = _center_and_infer(engine, features[:end0], c0, centroid)
+    rgb0 = rgb[:end0] if rgb is not None else None
+    first_result = _center_and_infer(engine, features[:end0], c0, centroid, rgb=rgb0)
 
     # Pre-allocate numpy arrays for full output
     output_arrays = {}
@@ -212,9 +219,12 @@ def _chunked_inference(engine, features, coords, chunk_size):
         end = min(i + chunk_size, n)
         chunk_coords = coords[i:end]
         chunk_feats = features[i:end]
+        chunk_rgb = rgb[i:end] if rgb is not None else None
 
         centroid = chunk_coords.mean(axis=0).astype(np.float32)
-        chunk_result = _center_and_infer(engine, chunk_feats, chunk_coords, centroid)
+        chunk_result = _center_and_infer(
+            engine, chunk_feats, chunk_coords, centroid, rgb=chunk_rgb
+        )
 
         for k, v in chunk_result.items():
             if k in output_arrays and isinstance(v, torch.Tensor):
@@ -281,7 +291,8 @@ def run_full_inference(cfg: DictConfig) -> None:
 
     features = data["features"]
     coords = data["xyz"]
-    # Free preprocessor output dict (keep only what we need)
+    # Keep rgb for seg_a (if present in the point cloud); free the rest
+    seg_a_rgb = data.get("rgb")
     del data
 
     # ── Step 2: Seg-A ────────────────────────────────────────────────────
@@ -291,7 +302,9 @@ def run_full_inference(cfg: DictConfig) -> None:
     logger.info("Running Seg-A inference...")
     seg_a_engine = SegAInference(cfg, seg_a_ckpt)
 
-    seg_a_result = _chunked_inference(seg_a_engine, features, coords, chunk_size)
+    seg_a_result = _chunked_inference(
+        seg_a_engine, features, coords, chunk_size, rgb=seg_a_rgb
+    )
     seg_a_labels = seg_a_result["predictions"].numpy()
 
     del seg_a_engine, seg_a_result

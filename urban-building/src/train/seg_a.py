@@ -27,6 +27,7 @@ def train_seg_a(cfg: DictConfig) -> None:
         logger.warning("No pretrained_encoder specified — training from scratch!")
 
     logger.info(f"Encoder frozen: {cfg.task.freeze_encoder}")
+    logger.info(f"RGB injection: {cfg.task.get('use_rgb', False)}")
 
     train_loader = build_dataloader(cfg, split="train")
     val_loader = build_dataloader(cfg, split="val")
@@ -58,13 +59,17 @@ def train_seg_a(cfg: DictConfig) -> None:
         coord = batch["coords"].to(device)
         batch_idx = batch["batch"].to(device)
 
+        rgb = batch.get("rgb")
+        if rgb is not None:
+            rgb = rgb.to(device)
+
         if "labels" in batch and batch["labels"] is not None:
             labels = batch["labels"].to(device)
         else:
             rel_z = feat[:, 3]
             labels = generate_pseudo_labels(coord, rel_z)
 
-        output = model(feat, coord, batch_idx)
+        output = model(feat, coord, batch_idx, rgb=rgb)
         logits = output["logits"]
         n_classes = logits.shape[-1]
 

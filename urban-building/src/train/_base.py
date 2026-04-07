@@ -1,7 +1,7 @@
 # src/train/_base.py
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
 
 import torch
 import torch.nn as nn
@@ -28,8 +28,9 @@ def train_epoch(
     device: torch.device,
     epoch: int,
     logger: Logger,
-    scaler: Optional[torch.cuda.amp.GradScaler] = None,
+    scaler: torch.cuda.amp.GradScaler | None = None,
     use_amp: bool = False,
+    autocast_dtype: torch.dtype | None = None,
 ) -> float:
     model.train()
     total_loss = 0.0
@@ -38,7 +39,7 @@ def train_epoch(
     for batch_idx, batch in enumerate(dataloader):
         optimizer.zero_grad()
 
-        with torch.amp.autocast("cuda", enabled=use_amp):
+        with torch.amp.autocast("cuda", enabled=use_amp, dtype=autocast_dtype):
             loss = criterion(model, batch, device)
 
         if scaler is not None:
@@ -67,6 +68,7 @@ def validate_epoch(
     criterion: Callable,
     device: torch.device,
     use_amp: bool = False,
+    autocast_dtype: torch.dtype | None = None,
 ) -> float:
     model.eval()
     total_loss = 0.0
@@ -74,7 +76,7 @@ def validate_epoch(
 
     with torch.no_grad():
         for batch in dataloader:
-            with torch.amp.autocast("cuda", enabled=use_amp):
+            with torch.amp.autocast("cuda", enabled=use_amp, dtype=autocast_dtype):
                 loss = criterion(model, batch, device)
             total_loss += loss.item()
             n_batches += 1
@@ -86,9 +88,9 @@ def train_loop(
     cfg: DictConfig,
     model: nn.Module,
     train_loader: DataLoader,
-    val_loader: Optional[DataLoader],
+    val_loader: DataLoader | None,
     optimizer: Optimizer,
-    scheduler: Optional[_LRScheduler],
+    scheduler: _LRScheduler | None,
     criterion: Callable,
     logger: Logger,
 ) -> TrainResult:
@@ -98,8 +100,16 @@ def train_loop(
     ckpt_dir = Path(cfg.paths.ckpt_root) / cfg.task.name
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
-    use_amp = cfg.run.get("precision", "fp32") != "fp32"
-    scaler = torch.amp.GradScaler("cuda") if use_amp else None
+    precision = str(cfg.task.get("precision", cfg.run.get("precision", "fp32"))).lower()
+    use_amp = device.type == "cuda" and precision != "fp32"
+    autocast_dtype: torch.dtype | None = None
+    scaler: torch.cuda.amp.GradScaler | None = None
+
+    if use_amp and precision in {"bf16", "bfloat16"}:
+        autocast_dtype = torch.bfloat16
+    elif use_amp:
+        autocast_dtype = torch.float16
+        scaler = torch.amp.GradScaler("cuda")
 
     patience = cfg.task.get("early_stopping_patience", 0)
     no_improve = 0
@@ -122,6 +132,7 @@ def train_loop(
             logger=logger,
             scaler=scaler,
             use_amp=use_amp,
+            autocast_dtype=autocast_dtype,
         )
 
         logger.epoch(epoch, f"Train Loss: {train_loss:.6f}")
@@ -129,7 +140,12 @@ def train_loop(
 
         if val_loader is not None:
             val_loss = validate_epoch(
-                model, val_loader, criterion, device, use_amp=use_amp
+                model,
+                val_loader,
+                criterion,
+                device,
+                use_amp=use_amp,
+                autocast_dtype=autocast_dtype,
             )
             logger.epoch(epoch, f"Val Loss: {val_loss:.6f}")
             val_losses.append(val_loss)
@@ -184,11 +200,13 @@ def build_optimizer(cfg: DictConfig, model: nn.Module) -> Optimizer:
     if use_differential and hasattr(model, "encoder"):
         encoder_param_ids = {id(p) for p in model.encoder.parameters()}
         encoder_params = [
-            p for p in model.parameters()
+            p
+            for p in model.parameters()
             if p.requires_grad and id(p) in encoder_param_ids
         ]
         head_params = [
-            p for p in model.parameters()
+            p
+            for p in model.parameters()
             if p.requires_grad and id(p) not in encoder_param_ids
         ]
         params = [
@@ -217,7 +235,7 @@ def build_optimizer(cfg: DictConfig, model: nn.Module) -> Optimizer:
         return torch.optim.AdamW(params, lr=base_lr, weight_decay=weight_decay)
 
 
-def build_scheduler(cfg: DictConfig, optimizer: Optimizer) -> Optional[_LRScheduler]:
+def build_scheduler(cfg: DictConfig, optimizer: Optimizer) -> _LRScheduler | None:
     sched_type = cfg.task.scheduler.type.lower()
     warmup_epochs = cfg.task.scheduler.get("warmup_epochs", 0)
 

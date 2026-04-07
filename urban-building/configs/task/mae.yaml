@@ -10,7 +10,13 @@ masking:
 
 loss:
   type: mse
-  target: xyz_relz
+  target: all
+
+features:
+  xyz: true
+  relz: true
+  rgb: true
+  intensity: auto
 
 optimizer:
   type: adamw
@@ -21,5 +27,8 @@ scheduler:
   type: cosine
   warmup_epochs: 10
 
+precision: bf16
 epochs: 300
-batch_size: 4
+batch_size: 6
+num_workers: 8
+max_batch_points: 480000

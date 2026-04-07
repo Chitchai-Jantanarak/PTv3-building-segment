@@ -112,7 +112,11 @@ def _collect_mae_predictions(
 
             masked_idx = output["masked_indices"]
             recon = output["reconstructed"][masked_idx].cpu().numpy()
-            target = feat[masked_idx, :4].cpu().numpy()
+            if hasattr(model, "build_target"):
+                target_tensor = model.build_target(feat)
+            else:
+                target_tensor = feat
+            target = target_tensor[masked_idx].cpu().numpy()
 
             all_recon.append(recon)
             all_target.append(target)
@@ -192,8 +196,10 @@ def evaluate_seg_b(
     he = height_wise_error(pred, target)
     eg = spatial_error_grid(pred, target, grid_res=grid_res)
 
-    logger.info(f"Chamfer: mean={ch['mean']:.4f} median={ch['median']:.4f} "
-                f"p90={ch['p90']:.4f} p99={ch['p99']:.4f}")
+    logger.info(
+        f"Chamfer: mean={ch['mean']:.4f} median={ch['median']:.4f} "
+        f"p90={ch['p90']:.4f} p99={ch['p99']:.4f}"
+    )
 
     return {
         "chamfer": ch,
@@ -212,7 +218,7 @@ def evaluate_mae(
     logger.info("Evaluating MAE on validation set...")
     data = _collect_mae_predictions(model, val_loader, device)
 
-    feature_names = ["x", "y", "z", "rel_z"]
+    feature_names = getattr(model, "target_feature_names", None)
     fm = per_feature_mse(data["reconstructed"], data["target"], feature_names)
 
     logger.info("Per-feature MSE:")
@@ -253,7 +259,10 @@ def run_evaluation(
     if task == "seg_a":
         num_classes = cfg.data.get("num_classes", 13) if cfg else 13
         # Get class names from dataset
-        if hasattr(val_loader.dataset, "_class_names") and val_loader.dataset._class_names:
+        if (
+            hasattr(val_loader.dataset, "_class_names")
+            and val_loader.dataset._class_names
+        ):
             class_names = [
                 val_loader.dataset._class_names.get(i, f"cls_{i}")
                 for i in range(num_classes)
@@ -267,7 +276,12 @@ def run_evaluation(
             class_names = [f"cls_{i}" for i in range(num_classes)]
 
         seg_metrics = evaluate_seg_a(
-            model, val_loader, device, num_classes, class_names, out_dir,
+            model,
+            val_loader,
+            device,
+            num_classes,
+            class_names,
+            out_dir,
         )
         metrics.update(seg_metrics)
 

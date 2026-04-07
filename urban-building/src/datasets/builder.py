@@ -1,12 +1,20 @@
 # src/dataset/base.py
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional, Union
+from typing import Any
 
 import numpy as np
 import torch
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader, Dataset
+
+from src.models.mae_features import (
+    assemble_requested_features,
+    infer_feature_names,
+    resolve_input_feature_names,
+    resolve_optional_feature_names,
+)
 
 from .base import BasePointCloudDataset, SimplePointCloudDataset, collate_fn
 
@@ -28,7 +36,6 @@ DATASET_REGISTRY: dict[str, type] = {}
 
 
 def register_dataset(name: str):
-
     def decorator(cls):
         DATASET_REGISTRY[name] = cls
         return cls
@@ -100,7 +107,7 @@ class SensatUrbanDataset(BasePointCloudDataset):
 
     def _get_class_info(
         self,
-    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
+    ) -> tuple[dict[int, str] | None, dict[int, int] | None]:
         return self.CLASSES, None
 
 
@@ -149,7 +156,7 @@ class WHUDataset(BasePointCloudDataset):
 
     def __init__(
         self,
-        root: Union[str, Path],
+        root: str | Path,
         mode: str = "mls",  # als | mls | mls-w
         use_simplified: bool = True,
         **kwargs,
@@ -173,7 +180,7 @@ class WHUDataset(BasePointCloudDataset):
 
     def _get_class_info(
         self,
-    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
+    ) -> tuple[dict[int, str] | None, dict[int, int] | None]:
         if self.use_simplified:
             return self.SIMPLIFIED_CLASSES, self.RAW_TO_SIMPLIFIED
         return None, None
@@ -193,7 +200,7 @@ class LASDataset(BasePointCloudDataset):
 
     def _get_class_info(
         self,
-    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
+    ) -> tuple[dict[int, str] | None, dict[int, int] | None]:
         return None, None
 
 
@@ -201,16 +208,20 @@ class LASDataset(BasePointCloudDataset):
 class MAEDataset(BasePointCloudDataset):
     def __init__(
         self,
-        root: Union[str, Path],
+        root: str | Path,
+        cfg: DictConfig,
         mask_ratio: float = 0.7,
         block_size: float = 0.5,
         **kwargs,
     ):
+        self.cfg = cfg
         self.mask_ratio = mask_ratio
         self.block_size = block_size
+        self.mae_feature_names = resolve_input_feature_names(cfg)
+        self.optional_mae_feature_names = resolve_optional_feature_names(cfg)
 
-        # MAE doesn't use labels
         kwargs["ignore_index"] = -1
+        kwargs["feature_names"] = list(self.mae_feature_names)
         super().__init__(root=root, **kwargs)
 
     def _load_file_list(self) -> list[Path]:
@@ -233,8 +244,64 @@ class MAEDataset(BasePointCloudDataset):
 
     def _get_class_info(
         self,
-    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
+    ) -> tuple[dict[int, str] | None, dict[int, int] | None]:
         return None, None
+
+    def _load_sample(self, file_path: Path) -> dict[str, np.ndarray]:
+        data = super()._load_sample(file_path)
+
+        raw: Any
+        try:
+            if file_path.suffix == ".npz":
+                raw = np.load(file_path, allow_pickle=True)
+                intensity_raw = raw["intensity"] if "intensity" in raw.files else None
+                indices_raw = raw["indices"] if "indices" in raw.files else None
+            else:
+                raw = torch.load(file_path, map_location="cpu", weights_only=False)
+                intensity_raw = raw.get("intensity", None)
+                indices_raw = raw.get("indices", None)
+        except Exception as exc:
+            logger.error(f"Failed to reload {file_path} for MAE features: {exc}")
+            raise
+
+        features = np.asarray(data["features"], dtype=np.float32)
+        feature_names = data.get("feature_names", None)
+        if feature_names is None:
+            feature_names = infer_feature_names(features.shape[1])
+
+        mae_data: dict[str, np.ndarray] = {
+            "coords": np.asarray(data["coords"], dtype=np.float32),
+            "features": features,
+            "feature_names": np.asarray(feature_names, dtype=object),
+        }
+
+        rgb = data.get("rgb", None)
+        if rgb is not None:
+            mae_data["rgb"] = np.asarray(rgb, dtype=np.float32)
+
+        if intensity_raw is not None:
+            intensity = np.asarray(intensity_raw, dtype=np.float32).reshape(-1)
+            if (
+                intensity.shape[0] != mae_data["coords"].shape[0]
+                and indices_raw is not None
+            ):
+                index_array = np.asarray(indices_raw, dtype=np.int64)
+                intensity = intensity[index_array]
+            if intensity.shape[0] == mae_data["coords"].shape[0]:
+                mae_data["intensity"] = intensity
+
+        if hasattr(raw, "close"):
+            raw.close()
+
+        assembled_features, feature_names = assemble_requested_features(
+            mae_data,
+            self.mae_feature_names,
+            self.optional_mae_feature_names,
+        )
+
+        data["features"] = assembled_features
+        data["feature_names"] = feature_names
+        return data
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         data = super().__getitem__(idx)
@@ -248,7 +315,7 @@ class MAEDataset(BasePointCloudDataset):
 class SegADataset(BasePointCloudDataset):
     def __init__(
         self,
-        root: Union[str, Path],
+        root: str | Path,
         dataset_type: str = "sensat",  # sensat | whu
         **kwargs,
     ):
@@ -282,7 +349,7 @@ class SegADataset(BasePointCloudDataset):
 
     def _get_class_info(
         self,
-    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
+    ) -> tuple[dict[int, str] | None, dict[int, int] | None]:
         return self._class_names, None
 
 
@@ -292,7 +359,7 @@ class SegADataset(BasePointCloudDataset):
 class SegBDataset(BasePointCloudDataset):
     def __init__(
         self,
-        root: Union[str, Path],
+        root: str | Path,
         building_class: int = 2,
         mask_ratio: float = 0.75,
         mask_type: str = "structured",  # structured | random
@@ -327,7 +394,7 @@ class SegBDataset(BasePointCloudDataset):
 
     def _get_class_info(
         self,
-    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
+    ) -> tuple[dict[int, str] | None, dict[int, int] | None]:
         return None, None
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
@@ -432,7 +499,7 @@ class FEMADataset(Dataset):
 
     def __init__(
         self,
-        root: Union[str, Path],
+        root: str | Path,
         split: str = "train",
         feature_dim: int = 32,
         **kwargs,
@@ -509,8 +576,8 @@ class FEMADataset(Dataset):
 def build_dataset(
     cfg: DictConfig,
     split: str = "train",
-    task: Optional[str] = None,
-    transform: Optional[Callable] = None,
+    task: str | None = None,
+    transform: Callable | None = None,
 ) -> Dataset:
     if task is None:
         task = cfg.task.name if hasattr(cfg, "task") else "generic"
@@ -549,6 +616,7 @@ def build_dataset(
     if task in ["mae"]:
         dataset_cls = get_dataset_class("mae")
         masking = task_cfg.get("masking", {})
+        kwargs["cfg"] = cfg
         kwargs["mask_ratio"] = (
             masking.get("ratio", 0.75) if hasattr(masking, "get") else 0.75
         )
@@ -586,10 +654,10 @@ def build_dataset(
 def build_dataloader(
     cfg: DictConfig,
     split: str = "train",
-    task: Optional[str] = None,
-    transform: Optional[Callable] = None,
-    collate: Optional[Callable] = None,
-) -> Optional[DataLoader]:
+    task: str | None = None,
+    transform: Callable | None = None,
+    collate: Callable | None = None,
+) -> DataLoader | None:
     dataset = build_dataset(cfg, split=split, task=task, transform=transform)
 
     if len(dataset) == 0:
@@ -602,13 +670,13 @@ def build_dataloader(
 
     task_cfg = cfg.task if hasattr(cfg, "task") else {}
     batch_size = task_cfg.get("batch_size", data_cfg.get("batch_size", 8))
-    num_workers = data_cfg.get("num_workers", 0)
+    num_workers = task_cfg.get("num_workers", data_cfg.get("num_workers", 0))
 
     loader_kwargs = {
         "batch_size": batch_size,
         "shuffle": is_train,
         "num_workers": num_workers,
-        "pin_memory": data_cfg.get("pin_memory", True),
+        "pin_memory": task_cfg.get("pin_memory", data_cfg.get("pin_memory", True)),
         "drop_last": is_train and len(dataset) > batch_size,
         "persistent_workers": num_workers > 0,
     }
@@ -616,8 +684,13 @@ def build_dataloader(
     if collate is None:
         task_name = task or (cfg.task.name if hasattr(cfg, "task") else "")
         if task_name not in ["fema", "hazus"]:
-            max_bp = data_cfg.get("max_batch_points", 500_000)
-            collate = lambda batch, _mbp=max_bp: collate_fn(batch, max_batch_points=_mbp)
+            max_bp = task_cfg.get(
+                "max_batch_points",
+                data_cfg.get("max_batch_points", 500_000),
+            )
+            collate = lambda batch, _mbp=max_bp: collate_fn(
+                batch, max_batch_points=_mbp
+            )
 
     if collate is not None:
         loader_kwargs["collate_fn"] = collate

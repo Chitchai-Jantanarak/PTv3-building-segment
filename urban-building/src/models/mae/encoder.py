@@ -1,5 +1,4 @@
 # src/models/mae/encoder.py
-from typing import Optional
 
 import torch.nn as nn
 from omegaconf import DictConfig
@@ -18,8 +17,8 @@ class MAEEncoder(nn.Module):
         self,
         feat: Tensor,
         coord: Tensor,
-        batch: Optional[Tensor] = None,
-        offset: Optional[Tensor] = None,
+        batch: Tensor | None = None,
+        offset: Tensor | None = None,
     ) -> Tensor:
         return self.encoder(feat, coord, batch, offset)
 

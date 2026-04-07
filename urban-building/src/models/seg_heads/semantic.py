@@ -1,5 +1,4 @@
 # src/models/seg_heads/semantic.py
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -67,8 +66,8 @@ class SegAModel(nn.Module):
         self,
         feat: Tensor,
         coord: Tensor,
-        batch: Optional[Tensor] = None,
-        rgb: Optional[Tensor] = None,
+        batch: Tensor | None = None,
+        rgb: Tensor | None = None,
     ) -> dict[str, Tensor]:
         encoded = self.encoder(feat, coord, batch)
 
@@ -91,8 +90,8 @@ class SegAModel(nn.Module):
         self,
         feat: Tensor,
         coord: Tensor,
-        batch: Optional[Tensor] = None,
-        rgb: Optional[Tensor] = None,
+        batch: Tensor | None = None,
+        rgb: Tensor | None = None,
     ) -> Tensor:
         output = self.forward(feat, coord, batch, rgb=rgb)
         return torch.argmax(output["logits"], dim=-1)

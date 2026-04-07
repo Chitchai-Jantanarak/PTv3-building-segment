@@ -77,7 +77,9 @@ def plot_confusion_matrix(
         for j in range(n):
             val = cm_plot[i, j]
             color = "white" if val > thresh else "black"
-            ax.text(j, i, f"{val:.2f}", ha="center", va="center", color=color, fontsize=7)
+            ax.text(
+                j, i, f"{val:.2f}", ha="center", va="center", color=color, fontsize=7
+            )
 
     ax.set_xlabel("Predicted")
     ax.set_ylabel("True")
@@ -150,8 +152,16 @@ def plot_chamfer_histogram(
     # Stats lines
     mean_d = distances.mean()
     median_d = np.median(distances)
-    ax.axvline(mean_d, color="red", linestyle="--", linewidth=1.5, label=f"Mean: {mean_d:.4f}")
-    ax.axvline(median_d, color="orange", linestyle="--", linewidth=1.5, label=f"Median: {median_d:.4f}")
+    ax.axvline(
+        mean_d, color="red", linestyle="--", linewidth=1.5, label=f"Mean: {mean_d:.4f}"
+    )
+    ax.axvline(
+        median_d,
+        color="orange",
+        linestyle="--",
+        linewidth=1.5,
+        label=f"Median: {median_d:.4f}",
+    )
 
     ax.set_xlabel("Distance")
     ax.set_ylabel("Count")
@@ -169,9 +179,13 @@ def plot_chamfer_histogram(
         f"Max={distances.max():.4f}"
     )
     ax.text(
-        0.97, 0.95, stats_text,
-        transform=ax.transAxes, fontsize=9,
-        verticalalignment="top", horizontalalignment="right",
+        0.97,
+        0.95,
+        stats_text,
+        transform=ax.transAxes,
+        fontsize=9,
+        verticalalignment="top",
+        horizontalalignment="right",
         bbox={"boxstyle": "round", "facecolor": "wheat", "alpha": 0.8},
     )
 
@@ -192,12 +206,20 @@ def plot_height_wise_error(
     fig, ax1 = plt.subplots(figsize=(10, 5))
 
     # Error line with std fill
-    ax1.plot(bin_centers[valid], mean_error[valid], "o-", color="#4C72B0", linewidth=1.5, markersize=4)
+    ax1.plot(
+        bin_centers[valid],
+        mean_error[valid],
+        "o-",
+        color="#4C72B0",
+        linewidth=1.5,
+        markersize=4,
+    )
     ax1.fill_between(
         bin_centers[valid],
         np.maximum(mean_error[valid] - std_error[valid], 0),
         mean_error[valid] + std_error[valid],
-        alpha=0.2, color="#4C72B0",
+        alpha=0.2,
+        color="#4C72B0",
     )
     ax1.set_xlabel("Height (Z)")
     ax1.set_ylabel("Mean Error", color="#4C72B0")
@@ -205,8 +227,14 @@ def plot_height_wise_error(
 
     # Point count on secondary axis
     ax2 = ax1.twinx()
-    ax2.bar(bin_centers[valid], counts[valid], width=(bin_centers[1] - bin_centers[0]) * 0.6,
-            alpha=0.2, color="gray", label="Point Count")
+    ax2.bar(
+        bin_centers[valid],
+        counts[valid],
+        width=(bin_centers[1] - bin_centers[0]) * 0.6,
+        alpha=0.2,
+        color="gray",
+        label="Point Count",
+    )
     ax2.set_ylabel("Point Count", color="gray")
     ax2.tick_params(axis="y", labelcolor="gray")
 
@@ -230,8 +258,11 @@ def plot_error_heatmap(
     masked_grid = np.ma.masked_invalid(grid)
 
     im = ax.pcolormesh(
-        x_edges, y_edges, masked_grid,
-        cmap="hot_r", shading="flat",
+        x_edges,
+        y_edges,
+        masked_grid,
+        cmap="hot_r",
+        shading="flat",
     )
     fig.colorbar(im, ax=ax, label="Mean Error", shrink=0.8)
 
@@ -261,13 +292,22 @@ def plot_per_feature_mse(
     # Annotate bars with values
     for bar, val in zip(bars, values, strict=True):
         ax.text(
-            bar.get_x() + bar.get_width() / 2, bar.get_height(),
-            f"{val:.4f}", ha="center", va="bottom", fontsize=9,
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height(),
+            f"{val:.4f}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
         )
 
     total = feature_mse.get("total", 0)
-    ax.axhline(total, color="red", linestyle="--", linewidth=1.5,
-               label=f"Total MSE: {total:.4f}")
+    ax.axhline(
+        total,
+        color="red",
+        linestyle="--",
+        linewidth=1.5,
+        label=f"Total MSE: {total:.4f}",
+    )
 
     ax.set_ylabel("MSE")
     ax.set_title(title)
@@ -331,8 +371,11 @@ def plot_all(
             he = metrics["height_error"]
             p = out_dir / "height_wise_error.png"
             plot_height_wise_error(
-                he["bin_centers"], he["mean_error"],
-                he["std_error"], he["counts"], p,
+                he["bin_centers"],
+                he["mean_error"],
+                he["std_error"],
+                he["counts"],
+                p,
             )
             saved.append(p)
 

@@ -39,7 +39,7 @@ def seg_b_v2_criterion(model, batch, device):
     target_xyzr = torch.cat([target_coord, target_relz], dim=-1)
 
     with torch.no_grad():
-        dist = torch.cdist(xyzr_pred[:, :3], target_coord)  
+        dist = torch.cdist(xyzr_pred[:, :3], target_coord)
         nn_idx = dist.argmin(dim=1)  #
 
     matched_target_xyzr = target_xyzr[nn_idx]

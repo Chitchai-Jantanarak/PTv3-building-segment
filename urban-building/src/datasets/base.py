@@ -1,8 +1,9 @@
 # src/dataset/base.py
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional, Union
+from typing import Any
 
 import numpy as np
 import torch
@@ -14,12 +15,12 @@ logger = logging.getLogger(__name__)
 class BasePointCloudDataset(Dataset, ABC):
     def __init__(
         self,
-        root: Union[str, Path],
+        root: str | Path,
         split: str = "train",
         voxel_size: float = 0.04,
-        max_points: Optional[int] = None,
-        transform: Optional[Callable] = None,
-        feature_names: Optional[list[str]] = None,
+        max_points: int | None = None,
+        transform: Callable | None = None,
+        feature_names: list[str] | None = None,
         ignore_index: int = -1,
         cache_data: bool = False,
     ):
@@ -67,7 +68,7 @@ class BasePointCloudDataset(Dataset, ABC):
     @abstractmethod
     def _get_class_info(
         self,
-    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
+    ) -> tuple[dict[int, str] | None, dict[int, int] | None]:
         raise NotImplementedError
 
     def __len__(self) -> int:
@@ -312,10 +313,10 @@ class BasePointCloudDataset(Dataset, ABC):
 class SimplePointCloudDataset(BasePointCloudDataset):
     def __init__(
         self,
-        root: Union[str, Path],
+        root: str | Path,
         split: str = "train",
         num_classes: int = 0,
-        class_names: Optional[dict[int, str]] = None,
+        class_names: dict[int, str] | None = None,
         **kwargs,
     ):
         """
@@ -345,7 +346,7 @@ class SimplePointCloudDataset(BasePointCloudDataset):
 
     def _get_class_info(
         self,
-    ) -> tuple[Optional[dict[int, str]], Optional[dict[int, int]]]:
+    ) -> tuple[dict[int, str] | None, dict[int, int] | None]:
         return self._class_names, None
 
 

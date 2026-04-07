@@ -1,6 +1,6 @@
 # src/infer/hazus.py
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -33,7 +33,7 @@ class HazusInference(InferenceEngine):
         }
 
     def predict_single(
-        self, xyz: torch.Tensor, mae_error: Optional[torch.Tensor] = None
+        self, xyz: torch.Tensor, mae_error: torch.Tensor | None = None
     ) -> dict[str, Any]:
         xyz = xyz.to(self.device)
         if mae_error is not None:
@@ -51,9 +51,9 @@ class HazusInference(InferenceEngine):
 
 def run_hazus_inference(
     cfg: DictConfig,
-    input_path: Union[str, Path],
-    output_path: Union[str, Path],
-    checkpoint_path: Union[str, Path],
+    input_path: str | Path,
+    output_path: str | Path,
+    checkpoint_path: str | Path,
 ) -> None:
     from sklearn.cluster import DBSCAN
 

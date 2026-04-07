@@ -186,7 +186,7 @@ def main():
     )
 
     print(f"\n[SPLIT] train: {len(train_files)} files, val: {len(val_files)} files")
-    print(f"  Val ratio: {len(val_files)/len(files):.1%}")
+    print(f"  Val ratio: {len(val_files) / len(files):.1%}")
 
     print(f"\n--- TRAIN ({len(train_files)}) ---")
     for f in train_files:
@@ -220,7 +220,9 @@ def main():
     print(f"\n[PROC] Processing val -> {val_out}")
     n_val = preprocess_and_save(val_files, val_out, cfg)
 
-    print(f"\n[DONE] train: {n_train}/{len(train_files)}, val: {n_val}/{len(val_files)}")
+    print(
+        f"\n[DONE] train: {n_train}/{len(train_files)}, val: {n_val}/{len(val_files)}"
+    )
     print(f"  Output: {out_dir}/{{train,val}}/*.npz")
 
 

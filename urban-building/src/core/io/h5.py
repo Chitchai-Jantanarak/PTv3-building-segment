@@ -1,14 +1,13 @@
 # src/core/io/h5.py
 from pathlib import Path
-from typing import Optional, Union
 
 import h5py
 import numpy as np
 
 
 def read_h5(
-    path: Union[str, Path],
-    keys: Optional[list[str]] = None,
+    path: str | Path,
+    keys: list[str] | None = None,
 ) -> dict[str, np.ndarray]:
     path = Path(path)
     data = {}
@@ -31,9 +30,9 @@ def read_h5(
 
 
 def write_h5(
-    path: Union[str, Path],
+    path: str | Path,
     data: dict[str, np.ndarray],
-    compression: Optional[str] = "gzip",
+    compression: str | None = "gzip",
 ) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -46,7 +45,7 @@ def write_h5(
                 f.create_dataset(key, data=arr)
 
 
-def get_h5_keys(path: Union[str, Path]) -> list[str]:
+def get_h5_keys(path: str | Path) -> list[str]:
     path = Path(path)
     with h5py.File(path, "r") as f:
         return list(f.keys())

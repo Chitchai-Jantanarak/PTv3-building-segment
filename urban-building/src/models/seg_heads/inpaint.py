@@ -1,5 +1,4 @@
 # src/models/seg_heads/inpaint.py
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -68,8 +67,8 @@ class SegBGeomModel(nn.Module):
         self,
         feat: Tensor,
         coord: Tensor,
-        batch: Optional[Tensor] = None,
-        mask: Optional[Tensor] = None,
+        batch: Tensor | None = None,
+        mask: Tensor | None = None,
     ) -> dict[str, Tensor]:
         encoded = self.encoder(feat, coord, batch)
         xyz_pred = self.geom_head(encoded)
@@ -105,8 +104,8 @@ class SegBColorModel(nn.Module):
         self,
         feat: Tensor,
         coord: Tensor,
-        batch: Optional[Tensor] = None,
-        mask: Optional[Tensor] = None,
+        batch: Tensor | None = None,
+        mask: Tensor | None = None,
     ) -> dict[str, Tensor]:
         encoded = self.encoder(feat, coord, batch)
         xyz_pred = self.geom_head(encoded)
@@ -151,7 +150,7 @@ class SegBv2Model(nn.Module):
         self,
         feat: Tensor,
         coord: Tensor,
-        batch: Optional[Tensor] = None,
+        batch: Tensor | None = None,
     ) -> dict[str, Tensor]:
         encoded = self.encoder(feat, coord, batch)
         xyzr_pred = self.geom_head(encoded)
@@ -176,7 +175,7 @@ class StructuredMasking:
     def __call__(
         self,
         coord: Tensor,
-        labels: Optional[Tensor] = None,
+        labels: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         n_points = coord.shape[0]
         device = coord.device
@@ -219,7 +218,7 @@ class AnomalyMasking:
     def __call__(
         self,
         coord: Tensor,
-        batch: Optional[Tensor] = None,
+        batch: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         n_points = coord.shape[0]
         device = coord.device
@@ -256,7 +255,7 @@ class AnomalyMasking:
     def _density_mask(
         self,
         coord: Tensor,
-        batch: Optional[Tensor],
+        batch: Tensor | None,
         device: torch.device,
     ) -> Tensor:
         n_points = coord.shape[0]
@@ -289,7 +288,7 @@ class AnomalyMasking:
     def _hybrid_mask(
         self,
         coord: Tensor,
-        batch: Optional[Tensor],
+        batch: Tensor | None,
         device: torch.device,
     ) -> Tensor:
         n_points = coord.shape[0]

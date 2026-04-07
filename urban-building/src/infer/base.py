@@ -1,7 +1,7 @@
 # src/infer/base.py
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -14,8 +14,8 @@ class InferenceEngine(ABC):
     def __init__(
         self,
         cfg: DictConfig,
-        checkpoint_path: Union[str, Path],
-        device: Optional[str] = None,
+        checkpoint_path: str | Path,
+        device: str | None = None,
     ):
         self.cfg = cfg
         self.device = torch.device(device or cfg.run.device)
@@ -30,7 +30,7 @@ class InferenceEngine(ABC):
     def _build_model(self) -> nn.Module:
         pass
 
-    def _load_checkpoint(self, path: Union[str, Path]) -> None:
+    def _load_checkpoint(self, path: str | Path) -> None:
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {path}")

@@ -100,12 +100,16 @@ def main():
         else:
             train_files.append(f)
 
-    print(f"\n[SPLIT] Official SensatUrban split:")
+    print("\n[SPLIT] Official SensatUrban split:")
     print(f"  Train: {len(train_files)} tiles")
     print(f"  Val:   {len(val_files)} tiles")
     print(f"  Test:  {len(test_files)} tiles")
 
-    for label, flist in [("TRAIN", train_files), ("VAL", val_files), ("TEST", test_files)]:
+    for label, flist in [
+        ("TRAIN", train_files),
+        ("VAL", val_files),
+        ("TEST", test_files),
+    ]:
         print(f"\n--- {label} ---")
         for f in flist:
             print(f"  {f.stem}")
@@ -116,6 +120,7 @@ def main():
 
     # Load config
     from omegaconf import OmegaConf
+
     from src.core.preprocessing.preprocess import preprocess_file
 
     default = OmegaConf.load(project_root / "configs" / "default.yaml")
@@ -140,14 +145,14 @@ def main():
                 print(f"  [FAIL] {f.stem}")
         return ok
 
-    print(f"\n[PROC] Processing train...")
+    print("\n[PROC] Processing train...")
     n_train = process_split("train", train_files)
 
-    print(f"\n[PROC] Processing val...")
+    print("\n[PROC] Processing val...")
     n_val = process_split("val", val_files)
 
     if args.include_test:
-        print(f"\n[PROC] Processing test...")
+        print("\n[PROC] Processing test...")
         n_test = process_split("test", test_files)
     else:
         n_test = 0

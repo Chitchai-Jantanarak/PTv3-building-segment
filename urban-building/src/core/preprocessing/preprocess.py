@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Optional, Union
 
 import numpy as np
 from omegaconf import DictConfig
@@ -17,10 +16,10 @@ class Preprocessor:
         self.dem = None
         self.dem_meta = None
 
-    def load_dem(self, dem_path: Union[str, Path]) -> None:
+    def load_dem(self, dem_path: str | Path) -> None:
         self.dem, self.dem_meta = read_dem(dem_path)
 
-    def load_point_cloud(self, path: Union[str, Path]) -> dict[str, np.ndarray]:
+    def load_point_cloud(self, path: str | Path) -> dict[str, np.ndarray]:
         path = Path(path)
         suffix = path.suffix.lower()
 
@@ -76,7 +75,7 @@ class Preprocessor:
         return data
 
 
-def read_h5(path: Union[str, Path]) -> dict[str, np.ndarray]:
+def read_h5(path: str | Path) -> dict[str, np.ndarray]:
     import h5py
 
     path = Path(path)
@@ -88,10 +87,10 @@ def read_h5(path: Union[str, Path]) -> dict[str, np.ndarray]:
 
 
 def preprocess_file(
-    input_path: Union[str, Path],
-    output_path: Union[str, Path],
+    input_path: str | Path,
+    output_path: str | Path,
     cfg: DictConfig,
-    dem_path: Optional[Union[str, Path]] = None,
+    dem_path: str | Path | None = None,
 ) -> bool:
     preprocessor = Preprocessor(cfg)
 
@@ -111,7 +110,7 @@ def preprocess_file(
     return True
 
 
-def load_preprocessed(path: Union[str, Path]) -> dict[str, np.ndarray]:
+def load_preprocessed(path: str | Path) -> dict[str, np.ndarray]:
     path = Path(path)
     data = dict(np.load(path, allow_pickle=True))
     return data

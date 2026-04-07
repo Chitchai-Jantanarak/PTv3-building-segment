@@ -1,11 +1,10 @@
 # src/core/utils/logging.py
 import sys
 from datetime import datetime
-from typing import Optional
 
 
 class Logger:
-    def __init__(self, name: str = "MAIN", log_file: Optional[str] = None):
+    def __init__(self, name: str = "MAIN", log_file: str | None = None):
         self.name = name
         self.log_file = log_file
 
@@ -43,7 +42,7 @@ class Logger:
         self._write(self._format("[DBG]", msg))
 
 
-def get_logger(name: str = "MAIN", log_file: Optional[str] = None) -> Logger:
+def get_logger(name: str = "MAIN", log_file: str | None = None) -> Logger:
     return Logger(name=name, log_file=log_file)
 
 

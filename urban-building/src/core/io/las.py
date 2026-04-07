@@ -1,14 +1,13 @@
 # src/core/io/las.py
 from pathlib import Path
-from typing import Optional, Union
 
 import laspy
 import numpy as np
 
 
 def read_las(
-    path: Union[str, Path],
-    fields: Optional[list] = None,
+    path: str | Path,
+    fields: list | None = None,
 ) -> dict[str, np.ndarray]:
     path = Path(path)
     las = laspy.read(path)
@@ -33,12 +32,12 @@ def read_las(
 
 
 def write_las(
-    path: Union[str, Path],
+    path: str | Path,
     xyz: np.ndarray,
-    intensity: Optional[np.ndarray] = None,
-    rgb: Optional[np.ndarray] = None,
-    labels: Optional[np.ndarray] = None,
-    extra_dims: Optional[dict[str, np.ndarray]] = None,
+    intensity: np.ndarray | None = None,
+    rgb: np.ndarray | None = None,
+    labels: np.ndarray | None = None,
+    extra_dims: dict[str, np.ndarray] | None = None,
 ) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -73,7 +72,7 @@ def write_las(
     las.write(path)
 
 
-def get_las_bounds(path: Union[str, Path]) -> tuple[np.ndarray, np.ndarray]:
+def get_las_bounds(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     path = Path(path)
     las = laspy.read(path)
     mins = np.array([las.x.min(), las.y.min(), las.z.min()])

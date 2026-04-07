@@ -1,5 +1,4 @@
 # src/models/hazus_head/features.py
-from typing import Optional
 
 import torch
 from torch import Tensor
@@ -75,7 +74,7 @@ def compute_roof_features(
 
 def extract_building_features(
     xyz: Tensor,
-    mae_error: Optional[Tensor] = None,
+    mae_error: Tensor | None = None,
 ) -> Tensor:
     geom = compute_geometry_stats(xyz)
     roof = compute_roof_features(xyz)
@@ -102,7 +101,7 @@ class HazusFeatureExtractor:
     def extract(
         self,
         xyz: Tensor,
-        mae_error: Optional[Tensor] = None,
+        mae_error: Tensor | None = None,
     ) -> Tensor:
         return extract_building_features(xyz, mae_error)
 
@@ -110,7 +109,7 @@ class HazusFeatureExtractor:
         self,
         xyz: Tensor,
         batch: Tensor,
-        mae_errors: Optional[Tensor] = None,
+        mae_errors: Tensor | None = None,
     ) -> Tensor:
         unique_batches = torch.unique(batch)
         features_list = []

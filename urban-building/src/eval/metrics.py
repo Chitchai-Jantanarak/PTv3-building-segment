@@ -78,9 +78,7 @@ def boundary_iou(
     if boundary_mask.sum() == 0:
         return np.zeros(num_classes)
 
-    cm = confusion_matrix(
-        preds_v[boundary_mask], targets_v[boundary_mask], num_classes
-    )
+    cm = confusion_matrix(preds_v[boundary_mask], targets_v[boundary_mask], num_classes)
     return per_class_iou(cm)
 
 

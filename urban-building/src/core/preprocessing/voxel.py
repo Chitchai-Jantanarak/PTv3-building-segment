@@ -1,4 +1,3 @@
-from typing import Optional
 
 import numpy as np
 
@@ -6,8 +5,8 @@ import numpy as np
 def voxelize(
     xyz: np.ndarray,
     voxel_size: float,
-    features: Optional[np.ndarray] = None,
-    labels: Optional[np.ndarray] = None,
+    features: np.ndarray | None = None,
+    labels: np.ndarray | None = None,
     mode: str = "random",
 ) -> dict[str, np.ndarray]:
     voxel_coords = np.floor(xyz / voxel_size).astype(np.int64)
@@ -98,7 +97,7 @@ def compute_grid_coords(
 def inverse_voxelize(
     voxel_coords: np.ndarray,
     voxel_size: float,
-    offset: Optional[np.ndarray] = None,
+    offset: np.ndarray | None = None,
 ) -> np.ndarray:
     xyz = voxel_coords.astype(np.float32) * voxel_size + voxel_size / 2
     if offset is not None:

@@ -1,6 +1,6 @@
 # src/infer/seg_a.py
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -38,9 +38,9 @@ class SegAInference(InferenceEngine):
 
 def run_seg_a_inference(
     cfg: DictConfig,
-    input_path: Union[str, Path],
-    output_path: Union[str, Path],
-    checkpoint_path: Union[str, Path],
+    input_path: str | Path,
+    output_path: str | Path,
+    checkpoint_path: str | Path,
 ) -> None:
     from src.core.io import read_las, read_ply
     from src.core.preprocessing import Preprocessor

@@ -50,7 +50,9 @@ def train_seg_a(cfg: DictConfig) -> None:
                     f"final weights: {alpha.tolist()}"
                 )
         else:
-            logger.warning("Dataset does not support get_class_weights(), training without class weights")
+            logger.warning(
+                "Dataset does not support get_class_weights(), training without class weights"
+            )
 
     gamma = cfg.task.loss.get("gamma", 2.0)
 
@@ -79,7 +81,9 @@ def train_seg_a(cfg: DictConfig) -> None:
         labels[invalid] = ignore_index
 
         _alpha = alpha.to(device) if alpha is not None else None
-        loss = focal_loss(logits, labels, alpha=_alpha, gamma=gamma, ignore_index=ignore_index)
+        loss = focal_loss(
+            logits, labels, alpha=_alpha, gamma=gamma, ignore_index=ignore_index
+        )
         return loss
 
     optimizer = build_optimizer(cfg, model)
@@ -95,7 +99,7 @@ def train_seg_a(cfg: DictConfig) -> None:
         criterion=criterion,
         logger=logger,
     )
-    
+
     # Post-training evaluation
     from src.eval import run_evaluation
 

@@ -1,13 +1,12 @@
 # src/core/io/dem.py
 from pathlib import Path
-from typing import Optional, Union
 
 import numpy as np
 import rasterio
 from scipy.interpolate import RegularGridInterpolator
 
 
-def read_dem(path: Union[str, Path]) -> tuple[np.ndarray, dict]:
+def read_dem(path: str | Path) -> tuple[np.ndarray, dict]:
     path = Path(path)
     with rasterio.open(path) as src:
         dem = src.read(1).astype(np.float32)
@@ -26,8 +25,8 @@ def read_dem(path: Union[str, Path]) -> tuple[np.ndarray, dict]:
 
 def compute_rel_z(
     xyz: np.ndarray,
-    dem: Optional[np.ndarray] = None,
-    dem_meta: Optional[dict] = None,
+    dem: np.ndarray | None = None,
+    dem_meta: dict | None = None,
 ) -> np.ndarray:
     if dem is None or dem_meta is None:
         ground_z = np.percentile(xyz[:, 2], 5)

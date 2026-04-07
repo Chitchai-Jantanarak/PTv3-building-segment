@@ -1,5 +1,4 @@
 # src/models/hazus_head/model.py
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -54,7 +53,7 @@ class HazusModel(nn.Module):
         self,
         xyz: Tensor,
         batch: Tensor,
-        mae_errors: Optional[Tensor] = None,
+        mae_errors: Tensor | None = None,
     ) -> dict[str, Tensor]:
         features = self.feature_extractor.extract_batch(xyz, batch, mae_errors)
 
@@ -70,7 +69,7 @@ class HazusModel(nn.Module):
     def predict_single(
         self,
         xyz: Tensor,
-        mae_error: Optional[Tensor] = None,
+        mae_error: Tensor | None = None,
     ) -> dict[str, Tensor]:
         features = self.feature_extractor.extract(xyz, mae_error)
         features = features.unsqueeze(0)

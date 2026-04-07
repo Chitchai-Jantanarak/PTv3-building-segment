@@ -70,7 +70,9 @@ _HAZUS_PRIORITY = [
 ]
 
 
-def _classify_occupancy(height: float, area: float, aspect_ratio: float) -> tuple[int, str]:
+def _classify_occupancy(
+    height: float, area: float, aspect_ratio: float
+) -> tuple[int, str]:
     """Rule-based FEMA occupancy classification from geometry."""
     # AGR: very large footprint, low height, elongated
     if area > 3000 and height < 8 and aspect_ratio > 3.0:
@@ -262,9 +264,7 @@ def run_full_inference(cfg: DictConfig) -> None:
 
     ckpt_cfg = cfg.task.get("checkpoints", {})
     seg_a_ckpt = Path(ckpt_cfg.get("seg_a", "checkpoints/seg_a/best.pt"))
-    seg_b_geom_ckpt = Path(
-        ckpt_cfg.get("seg_b_geom", "checkpoints/seg_b_geom/best.pt")
-    )
+    seg_b_geom_ckpt = Path(ckpt_cfg.get("seg_b_geom", "checkpoints/seg_b_geom/best.pt"))
     seg_b_color_ckpt = Path(
         ckpt_cfg.get("seg_b_color", "checkpoints/seg_b_color/best.pt")
     )

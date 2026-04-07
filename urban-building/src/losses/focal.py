@@ -1,5 +1,4 @@
 # src/losses/focal.py
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -10,7 +9,7 @@ from torch import Tensor
 def focal_loss(
     pred: Tensor,
     target: Tensor,
-    alpha: Optional[Tensor] = None,
+    alpha: Tensor | None = None,
     gamma: float = 2.0,
     reduction: str = "mean",
     ignore_index: int = -100,
@@ -54,7 +53,7 @@ def focal_loss(
 class FocalLoss(nn.Module):
     def __init__(
         self,
-        alpha: Optional[Tensor] = None,
+        alpha: Tensor | None = None,
         gamma: float = 2.0,
         reduction: str = "mean",
         ignore_index: int = -100,

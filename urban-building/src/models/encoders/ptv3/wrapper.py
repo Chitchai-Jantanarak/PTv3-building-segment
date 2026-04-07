@@ -1,7 +1,6 @@
 # src/models/encoders/ptv3/wrapper.py
 import sys
 from pathlib import Path
-from typing import Optional
 
 import torch.nn as nn
 from omegaconf import DictConfig
@@ -64,8 +63,8 @@ class PTv3Encoder(nn.Module):
         self,
         feat: Tensor,
         coord: Tensor,
-        batch: Optional[Tensor] = None,
-        offset: Optional[Tensor] = None,
+        batch: Tensor | None = None,
+        offset: Tensor | None = None,
     ) -> Tensor:
         point = build_point_dict(
             feat=feat,
@@ -120,8 +119,8 @@ class PTv3EncoderOnly(nn.Module):
         self,
         feat: Tensor,
         coord: Tensor,
-        batch: Optional[Tensor] = None,
-        offset: Optional[Tensor] = None,
+        batch: Tensor | None = None,
+        offset: Tensor | None = None,
     ) -> Tensor:
         point = build_point_dict(
             feat=feat,

@@ -1,6 +1,6 @@
 # src/infer/seg_b.py
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -57,9 +57,9 @@ class SegBColorInference(InferenceEngine):
 
 def run_seg_b_inference(
     cfg: DictConfig,
-    input_path: Union[str, Path],
-    output_path: Union[str, Path],
-    checkpoint_path: Union[str, Path],
+    input_path: str | Path,
+    output_path: str | Path,
+    checkpoint_path: str | Path,
     with_color: bool = False,
 ) -> None:
     from src.core.io import read_las, read_ply

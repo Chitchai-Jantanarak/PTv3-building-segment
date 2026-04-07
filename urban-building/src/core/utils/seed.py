@@ -1,7 +1,6 @@
 # src/core/utils/seed.py
 import os
 import random
-from typing import Optional
 
 import numpy as np
 import torch
@@ -22,5 +21,5 @@ def set_seed(seed: int, deterministic: bool = True) -> None:
         torch.backends.cudnn.benchmark = False
 
 
-def get_seed() -> Optional[int]:
+def get_seed() -> int | None:
     return int(os.environ.get("PYTHONHASHSEED", 42))

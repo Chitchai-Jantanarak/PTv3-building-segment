@@ -1,5 +1,4 @@
 # src/core/utils/memory.py
-from typing import Optional
 
 import torch
 
@@ -25,7 +24,7 @@ def clear_cuda_cache() -> None:
         torch.cuda.synchronize()
 
 
-def log_memory(logger: Optional[object] = None) -> str:
+def log_memory(logger: object | None = None) -> str:
     mem = get_gpu_memory()
     msg = f"GPU: {mem['allocated']:.2f}GB / {mem['total']:.2f}GB"
     if logger and hasattr(logger, "info"):

@@ -1,7 +1,7 @@
 # src/infer/export.py
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -19,11 +19,11 @@ def generate_output_name(task: str, suffix: str = ".las") -> str:
 
 
 def export_las(
-    path: Union[str, Path],
+    path: str | Path,
     xyz: np.ndarray,
-    intensity: Optional[np.ndarray] = None,
-    rgb: Optional[np.ndarray] = None,
-    labels: Optional[np.ndarray] = None,
+    intensity: np.ndarray | None = None,
+    rgb: np.ndarray | None = None,
+    labels: np.ndarray | None = None,
 ) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -38,11 +38,11 @@ def export_las(
 
 
 def export_ply(
-    path: Union[str, Path],
+    path: str | Path,
     xyz: np.ndarray,
-    rgb: Optional[np.ndarray] = None,
-    intensity: Optional[np.ndarray] = None,
-    labels: Optional[np.ndarray] = None,
+    rgb: np.ndarray | None = None,
+    intensity: np.ndarray | None = None,
+    labels: np.ndarray | None = None,
 ) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -57,7 +57,7 @@ def export_ply(
 
 
 def export_csv(
-    path: Union[str, Path],
+    path: str | Path,
     data: list[dict[str, Any]],
 ) -> None:
     path = Path(path)
@@ -68,7 +68,7 @@ def export_csv(
 
 
 def export_npz(
-    path: Union[str, Path],
+    path: str | Path,
     **data: np.ndarray,
 ) -> None:
     path = Path(path)

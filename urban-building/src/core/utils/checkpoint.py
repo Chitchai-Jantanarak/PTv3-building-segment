@@ -1,7 +1,7 @@
 # src/core/utils/checkpoint.py
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -12,9 +12,9 @@ def save_ckpt(
     model: nn.Module,
     optimizer: Optimizer,
     epoch: int,
-    path: Union[str, Path],
+    path: str | Path,
     best: bool = False,
-    extra: Optional[dict[str, Any]] = None,
+    extra: dict[str, Any] | None = None,
 ) -> str:
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
@@ -36,11 +36,11 @@ def save_ckpt(
 
 
 def load_ckpt(
-    path: Union[str, Path],
+    path: str | Path,
     model: nn.Module,
-    optimizer: Optional[Optimizer] = None,
+    optimizer: Optimizer | None = None,
     strict: bool = True,
-    device: Optional[str] = None,
+    device: str | None = None,
 ) -> dict[str, Any]:
     path = Path(path)
 
@@ -58,8 +58,8 @@ def load_ckpt(
 
 def load_pretrained_encoder(
     model: nn.Module,
-    mae_ckpt_path: Union[str, Path],
-    device: Optional[str] = None,
+    mae_ckpt_path: str | Path,
+    device: str | None = None,
 ) -> int:
     mae_ckpt_path = Path(mae_ckpt_path)
     if not mae_ckpt_path.exists():
@@ -75,7 +75,7 @@ def load_pretrained_encoder(
     encoder_state = {}
     for key, value in mae_state.items():
         if key.startswith("encoder.encoder."):
-            new_key = key[len("encoder."):]  # strip first "encoder."
+            new_key = key[len("encoder.") :]  # strip first "encoder."
             encoder_state[new_key] = value
 
     if not encoder_state:
@@ -112,7 +112,7 @@ def load_pretrained_encoder(
     return n_loaded
 
 
-def get_latest_ckpt(path: Union[str, Path]) -> Optional[Path]:
+def get_latest_ckpt(path: str | Path) -> Path | None:
     path = Path(path)
     if not path.exists():
         return None

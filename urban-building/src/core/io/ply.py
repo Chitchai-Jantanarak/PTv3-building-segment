@@ -1,14 +1,13 @@
 # src/core/io/ply.py
 from pathlib import Path
-from typing import Optional, Union
 
 import numpy as np
 from plyfile import PlyData, PlyElement
 
 
 def read_ply(
-    path: Union[str, Path],
-    fields: Optional[list] = None,
+    path: str | Path,
+    fields: list | None = None,
 ) -> dict[str, np.ndarray]:
     path = Path(path)
     ply = PlyData.read(path)
@@ -40,11 +39,11 @@ def read_ply(
 
 
 def write_ply(
-    path: Union[str, Path],
+    path: str | Path,
     xyz: np.ndarray,
-    rgb: Optional[np.ndarray] = None,
-    intensity: Optional[np.ndarray] = None,
-    labels: Optional[np.ndarray] = None,
+    rgb: np.ndarray | None = None,
+    intensity: np.ndarray | None = None,
+    labels: np.ndarray | None = None,
 ) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

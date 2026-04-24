@@ -110,14 +110,14 @@ class MAEDecoder(nn.Module):
 
         full_features = torch.zeros(n_total, masked_features.shape[-1],
                                     device=encoded.device, dtype=encoded.dtype)
-        full_features[masked_indices] = masked_features
+        full_features[masked_indices] = masked_features.to(encoded.dtype)
 
         reconstructed = torch.zeros(n_total, self.decoder[-1].out_features,
                                     device=encoded.device, dtype=encoded.dtype)
-        reconstructed[masked_indices] = self.decoder(masked_features)
+        reconstructed[masked_indices] = self.decoder(masked_features).to(encoded.dtype)
 
         vis_feat = encoded + pos_vis
-        reconstructed[visible_indices] = self.decoder(vis_feat)
+        reconstructed[visible_indices] = self.decoder(vis_feat).to(encoded.dtype)
         return reconstructed
 
 

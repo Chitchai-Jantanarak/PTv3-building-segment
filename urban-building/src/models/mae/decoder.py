@@ -99,12 +99,12 @@ class MAEDecoder(nn.Module):
                 q_b = q[msk_mask_b].unsqueeze(0)
                 
                 if not vis_mask_b.any():
-                    attn_out[msk_mask_b] = torch.zeros_like(q_b.squeeze(0))
+                    attn_out[msk_mask_b] = torch.zeros_like(q_b.squeeze(0), dtype=attn_out.dtype)
                     continue
                     
                 kv_b = kv[vis_mask_b].unsqueeze(0)
                 out_b, _ = self.cross_attn(q_b, kv_b, kv_b)
-                attn_out[msk_mask_b] = out_b.squeeze(0)
+                attn_out[msk_mask_b] = out_b.squeeze(0).to(attn_out.dtype)
 
         masked_features = self.attn_norm(q + attn_out)        
 

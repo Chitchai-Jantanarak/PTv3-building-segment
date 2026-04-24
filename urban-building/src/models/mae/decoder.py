@@ -27,9 +27,11 @@ class MAEDecoder(nn.Module):
             nn.Linear(latent_dim, latent_dim),
         )
 
+        n_heads = cfg.model.get("n_heads", 8)
+        
         self.cross_attn = nn.MultiheadAttention(
             embed_dim=latent_dim,
-            num_heads=n_attn_heads,
+            num_heads=n_heads,
             batch_first=True,
             dropout=0.0,
         )
@@ -60,8 +62,9 @@ class MAEDecoder(nn.Module):
         masked_indices: Tensor,
         n_total: int,
         coord: Tensor | None = None,
+        batch: Tensor | None = None,
     ) -> Tensor:
-       n_vis = visible_indices.shape[0]
+        n_vis = visible_indices.shape[0]
         n_msk = masked_indices.shape[0]
 
         coord_norm = self._normalize_coord(coord)
@@ -74,11 +77,34 @@ class MAEDecoder(nn.Module):
 
         q = self.mask_token.expand(n_msk, -1) + pos_msk      
 
-        kv_seq = kv.unsqueeze(0)        
-        q_seq  = q.unsqueeze(0)         
+        if batch is None:
+            kv_seq = kv.unsqueeze(0)        
+            q_seq  = q.unsqueeze(0)         
 
-        attn_out, _ = self.cross_attn(q_seq, kv_seq, kv_seq)
-        attn_out = attn_out.squeeze(0)                        
+            attn_out, _ = self.cross_attn(q_seq, kv_seq, kv_seq)
+            attn_out = attn_out.squeeze(0)                        
+        else:
+            attn_out = torch.zeros_like(q)
+            vis_batch = batch[visible_indices]
+            msk_batch = batch[masked_indices]
+            
+            batch_max = int(batch.max().item()) + 1
+            for b in range(batch_max):
+                vis_mask_b = vis_batch == b
+                msk_mask_b = msk_batch == b
+                
+                if not msk_mask_b.any():
+                    continue
+                    
+                q_b = q[msk_mask_b].unsqueeze(0)
+                
+                if not vis_mask_b.any():
+                    attn_out[msk_mask_b] = torch.zeros_like(q_b.squeeze(0))
+                    continue
+                    
+                kv_b = kv[vis_mask_b].unsqueeze(0)
+                out_b, _ = self.cross_attn(q_b, kv_b, kv_b)
+                attn_out[msk_mask_b] = out_b.squeeze(0)
 
         masked_features = self.attn_norm(q + attn_out)        
 

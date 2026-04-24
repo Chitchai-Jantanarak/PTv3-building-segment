@@ -102,6 +102,7 @@ class MAEModel(nn.Module):
             masked_indices=masked_idx,
             n_total=feat.shape[0],
             coord=coord,
+            batch=batch,
         )
 
         return {

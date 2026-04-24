@@ -13,7 +13,6 @@ class MAEDecoder(nn.Module):
         latent_dim: int,
         output_dim: int = 4,
         coord_dim: int = 3,
-        n_attn_heads: int = 4
     ):
         super().__init__()
 

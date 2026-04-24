@@ -13,6 +13,7 @@ class MAEDecoder(nn.Module):
         latent_dim: int,
         output_dim: int = 4,
         coord_dim: int = 3,
+        n_attn_heads: int = 4
     ):
         super().__init__()
 
@@ -61,7 +62,7 @@ class MAEDecoder(nn.Module):
         n_total: int,
         coord: Tensor | None = None,
     ) -> Tensor:
-       n_vis = visible_indices.shape[0]
+        n_vis = visible_indices.shape[0]
         n_msk = masked_indices.shape[0]
 
         coord_norm = self._normalize_coord(coord)

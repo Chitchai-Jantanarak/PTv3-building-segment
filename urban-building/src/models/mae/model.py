@@ -118,18 +118,14 @@ class MAEModel(nn.Module):
         output: dict[str, Tensor],
         target: Tensor,
     ) -> Tensor:
-        reconstructed_norm = output["reconstructed_norm"]
+        reconstructed = output["reconstructed"]
         masked_idx = output["masked_indices"]
-
-        mean = output["target_mean"]
-        std  = output["target_std"]
-        target_norm = (target - mean) / std
 
         mask = torch.zeros(target.shape[0], dtype=torch.bool, device=target.device)
         mask[masked_idx] = True
 
-        weights = self.feature_loss_weights().to(target.device)
-        diff = (reconstructed_norm - target_norm) ** 2
+        weights = self.feature_loss_weights.to(target.device)
+        diff = (reconstructed - target) ** 2
         diff = diff * weights.unsqueeze(0)
 
         loss = diff[mask].mean()

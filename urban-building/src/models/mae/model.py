@@ -84,7 +84,7 @@ class MAEModel(nn.Module):
 
         encoded = self.encoder(visible_feat, visible_coord, visible_batch)
 
-        reconstructed = self.decoder(
+        reconstructed_norm = self.decoder(
             encoded=encoded,
             visible_indices=visible_idx,
             masked_indices=masked_idx,
@@ -96,6 +96,8 @@ class MAEModel(nn.Module):
         target_feat = feat[:, self.target_feature_indices]
         mean = target_feat.mean(dim=0, keepdim=True)
         std = target_feat.std(dim=0, keepdim=True, unbiased=False) + 1e-6
+
+        reconstructed = reconstructed_norm * std + mean
 
         return {
             "reconstructed":      reconstructed,

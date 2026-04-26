@@ -55,6 +55,18 @@ class MAEModel(nn.Module):
             block_size=cfg.task.masking.block_size,
         )
 
+        self.register_buffer(
+            "feature_loss_weights",
+            self._build_loss_weights()
+        )
+
+    def _build_loss_weights(self) -> torch.Tensor:
+        weights = torch.ones(len(self.target_feature_names))
+        for i, name in enumerate(self.target_feature_names):
+            if name in ("z", "rel_z"):
+                weights[i] = 3.0 # x3
+        return weights
+
     def forward(
         self,
         feat: Tensor,

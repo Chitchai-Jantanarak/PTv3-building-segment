@@ -94,12 +94,12 @@ class MAEModel(nn.Module):
         )
 
         target_feat = feat[:, self.target_feature_indices]
-        mean - target_feat.mean(dim=0, keepdim=True)
-        std - target_feat.std(dim=0, keepdim=True, unbiased=False) + 1e-6
+        mean = target_feat.mean(dim=0, keepdim=True)
+        std = target_feat.std(dim=0, keepdim=True, unbiased=False) + 1e-6
 
         return {
             "reconstructed":      reconstructed,
-            "reconstructed_norm": reconstructed_norm, 
+            "reconstructed_norm": reconstructed_norm,
             "target_mean":        mean,
             "target_std":         std,
             "visible_indices":    visible_idx,

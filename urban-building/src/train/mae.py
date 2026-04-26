@@ -5,6 +5,7 @@ import torch
 from omegaconf import DictConfig
 
 from src.core.utils import get_logger, set_seed
+from src.core.utils.checkpoint import load_ckpt
 from src.datasets import build_dataloader
 from src.models.mae import MAEForPretraining
 from src.train._base import build_optimizer, build_scheduler, train_loop
@@ -33,6 +34,21 @@ def train_mae(cfg: DictConfig) -> None:
 
     optimizer = build_optimizer(cfg, model)
     scheduler = build_scheduler(cfg, optimizer)
+
+    ckpt_dir = Path(cfg.paths.ckpt_root) / cfg.task.name
+    best_ckpt = ckpt_dir / "best.pt"
+
+    if best_ckpt.exists():
+        logger.info(f"Resuming weights from: {best_ckpt}")
+        load_ckpt(
+            path=best_ckpt,
+            model=model,
+            optimizer=None,    
+            strict=True,
+            device=cfg.run.device,
+        )
+    else:
+        logger.info("No checkpoint found — training from scratch")
 
     result = train_loop(
         cfg=cfg,

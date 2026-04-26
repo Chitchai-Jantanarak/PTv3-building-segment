@@ -137,6 +137,7 @@ class MAEModel(nn.Module):
         mask = torch.zeros(target.shape[0], dtype=torch.bool, device=target.device)
         mask[masked_idx] = True
 
+        weights = self.feature_loss_weights
         diff = (reconstructed - target) ** 2
         diff = diff * weights.unsqueeze(0)
 

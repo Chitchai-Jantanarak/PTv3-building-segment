@@ -6,7 +6,7 @@ freeze_encoder: false
 masking:
   type: block
   ratio: 0.65
-  block_size: 16
+  block_size: 32
 
 loss:
   type: mse
@@ -20,7 +20,9 @@ features:
 
 optimizer:
   type: adamw
-  lr: 3e-4
+  lr: 1e-4
+  encoder_lr: 5e-5
+  head_lr: 3e-4
   weight_decay: 0.05
 
 scheduler:
@@ -28,7 +30,7 @@ scheduler:
   warmup_epochs: 20
 
 precision: bf16
-epochs: 300
-batch_size: 18
-num_workers: 6
+epochs: 100
+batch_size: 6
+num_workers: 4
 max_batch_points: 400000

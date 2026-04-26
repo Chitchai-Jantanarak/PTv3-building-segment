@@ -55,18 +55,6 @@ class MAEModel(nn.Module):
             block_size=cfg.task.masking.block_size,
         )
 
-        self.register_buffer(
-            "feature_loss_weights",
-            self._build_loss_weights()
-        )
-
-    def _build_loss_weights(self) -> torch.Tensor:
-        weights = torch.ones(len(self.target_feature_names))
-        for i, name in enumerate(self.target_feature_names):
-            if name in ("z", "rel_z"):
-                weights[i] = 3.0 # x3
-        return weights
-
     def forward(
         self,
         feat: Tensor,
@@ -105,12 +93,19 @@ class MAEModel(nn.Module):
             batch=batch,
         )
 
+        target_feat = feat[:, self.target_feature_indices]
+        mean - target_feat.mean(dim=0, keepdim=True)
+        std - target_feat.std(dim=0, keepdim=True, unbiased=False) + 1e-6
+
         return {
-            "reconstructed": reconstructed,
-            "visible_indices": visible_idx,
-            "masked_indices": masked_idx,
-            "visible_mask": visible_mask,
-            "encoded": encoded,
+            "reconstructed":      reconstructed,
+            "reconstructed_norm": reconstructed_norm, 
+            "target_mean":        mean,
+            "target_std":         std,
+            "visible_indices":    visible_idx,
+            "masked_indices":     masked_idx,
+            "visible_mask":       visible_mask,
+            "encoded":            encoded,
         }
 
     def compute_loss(
@@ -120,11 +115,14 @@ class MAEModel(nn.Module):
     ) -> Tensor:
         reconstructed = output["reconstructed"]
         masked_idx = output["masked_indices"]
+        mean = output["target_mean"]
+        std = output["target_std"]
+
+        target_norm = (target - mean) / std
 
         mask = torch.zeros(target.shape[0], dtype=torch.bool, device=target.device)
         mask[masked_idx] = True
 
-        weights = self.feature_loss_weights.to(target.device)
         diff = (reconstructed - target) ** 2
         diff = diff * weights.unsqueeze(0)
 

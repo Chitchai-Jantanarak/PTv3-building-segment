@@ -138,7 +138,7 @@ class MAEModel(nn.Module):
         mask[masked_idx] = True
 
         weights = self.feature_loss_weights
-        diff = (reconstructed - target) ** 2
+        diff = (reconstructed - target_norm) ** 2
         diff = diff * weights.unsqueeze(0)
 
         loss = diff[mask].mean()

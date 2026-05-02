@@ -214,19 +214,51 @@ def evaluate_mae(
     device: torch.device,
     out_dir: Path,
 ) -> dict:
-    """MAE evaluation: per-feature MSE breakdown."""
+    """MAE evaluation: per-feature MSE, RMSE, bias, R², scatter plots."""
     logger.info("Evaluating MAE on validation set...")
     data = _collect_mae_predictions(model, val_loader, device)
 
+    pred   = data["reconstructed"]
+    target = data["target"]
     feature_names = getattr(model, "target_feature_names", None)
-    fm = per_feature_mse(data["reconstructed"], data["target"], feature_names)
 
-    logger.info("Per-feature MSE:")
-    for name, val in fm.items():
-        logger.info(f"  {name:10s}: {val:.6f}")
+    # --- metrics ---
+    from src.eval.metrics import (
+        per_feature_mse, per_feature_rmse,
+        per_feature_bias, per_feature_r2,
+        error_by_value_bins,
+    )
 
-    return {"feature_mse": fm}
+    fm   = per_feature_mse(pred, target, feature_names)
+    frm  = per_feature_rmse(pred, target, feature_names)
+    fb   = per_feature_bias(pred, target, feature_names)
+    fr2  = per_feature_r2(pred, target, feature_names)
 
+    logger.info("Per-feature MSE / RMSE / Bias / R²:")
+    names = feature_names or [f"feat_{i}" for i in range(pred.shape[1])]
+    for name in names:
+        logger.info(
+            f"  {name:10s}: MSE={fm[name]:.4f}  RMSE={frm[name]:.4f}"
+            f"  Bias={fb[name]:+.4f}  R²={fr2[name]:.4f}"
+        )
+
+    # Error by value bins for z and rel_z
+    bins_data = {}
+    for feat in ("z", "rel_z"):
+        if feature_names and feat in feature_names:
+            idx = feature_names.index(feat)
+            bins_data[feat] = error_by_value_bins(pred, target, idx)
+
+    return {
+        "feature_mse":  fm,
+        "feature_rmse": frm,
+        "feature_bias": fb,
+        "feature_r2":   fr2,
+        "bins_data":    bins_data,
+        "pred":         pred,
+        "target":       target,
+        "feature_names": names,
+    }
 
 def run_evaluation(
     task: str,

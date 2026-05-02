@@ -195,26 +195,86 @@ def spatial_error_grid(
 # ── MAE metrics ─────────────────────────────────────────────────────────
 
 
-def per_feature_mse(
+def per_feature_rmse(
     pred: np.ndarray,
     target: np.ndarray,
     feature_names: list[str] | None = None,
 ) -> dict[str, float]:
-    """Per-feature MSE breakdown.
-
-    Args:
-        pred: predicted features (N, D)
-        target: target features (N, D)
-        feature_names: optional names for each feature dim
-
-    Returns:
-        Dict mapping feature name to MSE value.
-    """
+    """RMSE per feature — same units as the original data, more interpretable."""
     if feature_names is None:
         feature_names = [f"feat_{i}" for i in range(pred.shape[1])]
-
     result = {}
     for i, name in enumerate(feature_names):
-        result[name] = float(((pred[:, i] - target[:, i]) ** 2).mean())
-    result["total"] = float(((pred - target) ** 2).mean())
+        mse = float(((pred[:, i] - target[:, i]) ** 2).mean())
+        result[name] = float(np.sqrt(mse))
+    result["total"] = float(np.sqrt(((pred - target) ** 2).mean()))
     return result
+
+
+def per_feature_bias(
+    pred: np.ndarray,
+    target: np.ndarray,
+    feature_names: list[str] | None = None,
+) -> dict[str, float]:
+    if feature_names is None:
+        feature_names = [f"feat_{i}" for i in range(pred.shape[1])]
+    result = {}
+    for i, name in enumerate(feature_names):
+        result[name] = float((pred[:, i] - target[:, i]).mean())
+    return result
+
+
+def per_feature_r2(
+    pred: np.ndarray,
+    target: np.ndarray,
+    feature_names: list[str] | None = None,
+) -> dict[str, float]:
+    if feature_names is None:
+        feature_names = [f"feat_{i}" for i in range(pred.shape[1])]
+    result = {}
+    for i, name in enumerate(feature_names):
+        t = target[:, i]
+        p = pred[:, i]
+        ss_res = ((t - p) ** 2).sum()
+        ss_tot = ((t - t.mean()) ** 2).sum()
+        r2 = 1.0 - ss_res / (ss_tot + 1e-10)
+        result[name] = float(r2)
+    return result
+
+
+def error_by_value_bins(
+    pred: np.ndarray,
+    target: np.ndarray,
+    feature_idx: int,
+    n_bins: int = 20,
+) -> dict[str, np.ndarray]:
+    t = target[:, feature_idx]
+    p = pred[:, feature_idx]
+    errors = (t - p) ** 2
+
+    t_min, t_max = t.min(), t.max()
+    if t_max - t_min < 1e-6:
+        return {
+            "bin_centers": np.array([t_min]),
+            "mean_mse": np.array([errors.mean()]),
+            "counts": np.array([len(errors)]),
+        }
+
+    bin_edges = np.linspace(t_min, t_max, n_bins + 1)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    bin_idx = np.clip(np.digitize(t, bin_edges) - 1, 0, n_bins - 1)
+
+    mean_mse = np.zeros(n_bins)
+    counts = np.zeros(n_bins, dtype=np.int64)
+
+    for b in range(n_bins):
+        mask = bin_idx == b
+        counts[b] = mask.sum()
+        if counts[b] > 0:
+            mean_mse[b] = errors[mask].mean()
+
+    return {
+        "bin_centers": bin_centers,
+        "mean_mse": mean_mse,
+        "counts": counts,
+    }

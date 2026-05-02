@@ -169,8 +169,8 @@ def train_loop(
         else:
             no_improve += 1
 
-        if epoch % 10 == 0:
-            save_ckpt(model, optimizer, epoch, ckpt_dir, best=False)
+        # if epoch % 10 == 0:
+        #     save_ckpt(model, optimizer, epoch, ckpt_dir, best=False)
 
         if cfg.runtime.clear_cuda_cache_each_epoch:
             clear_cuda_cache()

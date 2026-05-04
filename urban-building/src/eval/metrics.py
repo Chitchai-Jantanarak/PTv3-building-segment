@@ -194,6 +194,22 @@ def spatial_error_grid(
 
 # ── MAE metrics ─────────────────────────────────────────────────────────
 
+def per_feature_mse(
+    pred: np.ndarray,
+    target: np.ndarray,
+    feature_names: list[str] | None = None,
+) -> dict[str, float]:
+    """MSE per feature."""
+    if feature_names is None:
+        feature_names = [f"feat_{i}" for i in range(pred.shape[1])]
+
+    result = {}
+    for i, name in enumerate(feature_names):
+        result[name] = float(((pred[:, i] - target[:, i]) ** 2).mean())
+
+    result["total"] = float(((pred - target) ** 2).mean())
+    return result
+    
 
 def per_feature_rmse(
     pred: np.ndarray,

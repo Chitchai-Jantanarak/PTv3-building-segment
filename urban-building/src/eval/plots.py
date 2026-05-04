@@ -316,7 +316,6 @@ def plot_per_feature_mse(
     fig.tight_layout()
     _save_fig(fig, out_path)
 
-# src/eval/plots.py — add these functions
 
 def plot_pred_vs_actual(
     pred: np.ndarray,
@@ -506,126 +505,7 @@ def plot_error_by_value(
     _save_fig(fig, out_path)
 
 
-def plot_error_distribution(
-    pred: np.ndarray,
-    target: np.ndarray,
-    feature_names: list[str],
-    out_path: Path,
-    highlight: list[str] | None = None,
-) -> None:
-    highlight = highlight or ["z", "rel_z"]
-    n_feat = len(feature_names)
-    ncols = min(4, n_feat)
-    nrows = (n_feat + ncols - 1) // ncols
-
-    fig, axes = plt.subplots(nrows, ncols,
-                              figsize=(ncols * 4, nrows * 3))
-    axes = np.array(axes).flatten() if n_feat > 1 else [axes]
-
-    for i, name in enumerate(feature_names):
-        ax = axes[i]
-        errors = pred[:, i] - target[:, i]   # signed error
-
-        color = "crimson" if name in highlight else "#4C72B0"
-        ax.hist(errors, bins=60, color=color, alpha=0.7, edgecolor="none")
-        ax.axvline(0, color="black", linewidth=1.5, linestyle="--")
-        ax.axvline(errors.mean(), color="orange", linewidth=1.5,
-                   linestyle="-", label=f"bias={errors.mean():.3f}")
-
-        rmse = float(np.sqrt((errors**2).mean()))
-        ax.set_title(f"{name}  RMSE={rmse:.3f}")
-        ax.set_xlabel("Pred − Actual")
-        ax.set_ylabel("Count")
-        ax.legend(fontsize=8)
-        ax.grid(axis="y", alpha=0.3)
-
-    for j in range(n_feat, len(axes)):
-        axes[j].set_visible(False)
-
-    fig.suptitle("Reconstruction Error Distribution", fontsize=13)
-    fig.tight_layout()
-    _save_fig(fig, out_path, dpi=120)
-
-
-def plot_r2_bars(
-    r2_scores: dict[str, float],
-    out_path: Path,
-    title: str = "R² Score per Feature",
-) -> None:
-    names = list(r2_scores.keys())
-    values = list(r2_scores.values())
-
-    colors = []
-    for n, v in zip(names, values):
-        if n in ("z", "rel_z"):
-            colors.append("crimson" if v < 0.3 else "darkorange")
-        else:
-            colors.append("#4C72B0" if v >= 0.3 else "gray")
-
-    fig, ax = plt.subplots(figsize=(max(8, len(names)), 5))
-    bars = ax.bar(names, values, color=colors, alpha=0.85)
-
-    for bar, val in zip(bars, values):
-        ypos = bar.get_height() + 0.01 if val >= 0 else bar.get_height() - 0.05
-        ax.text(bar.get_x() + bar.get_width() / 2, ypos,
-                f"{val:.3f}", ha="center", va="bottom", fontsize=9)
-
-    ax.axhline(0, color="black", linewidth=1.0, linestyle="-")
-    ax.axhline(1, color="green", linewidth=1.0, linestyle="--",
-               alpha=0.5, label="Perfect (R²=1)")
-    ax.axhline(0, color="red", linewidth=1.0, linestyle="--",
-               alpha=0.3, label="Mean baseline (R²=0)")
-
-    ax.set_ylabel("R²")
-    ax.set_title(title)
-    ax.set_ylim(min(-0.2, min(values) - 0.1), 1.15)
-    ax.legend(fontsize=9)
-    ax.grid(axis="y", alpha=0.3)
-    fig.tight_layout()
-    _save_fig(fig, out_path)
-
-
-def plot_error_by_value(
-    bins_data: dict[str, dict],
-    out_path: Path,
-    title: str = "MSE by Actual Value (z and rel_z)",
-) -> None:
-    n = len(bins_data)
-    fig, axes = plt.subplots(1, n, figsize=(n * 6, 4))
-    if n == 1:
-        axes = [axes]
-
-    for ax, (feat_name, data) in zip(axes, bins_data.items()):
-        centers = data["bin_centers"]
-        mse = data["mean_mse"]
-        counts = data["counts"]
-        valid = counts > 0
-
-        color = "crimson" if feat_name in ("z", "rel_z") else "#4C72B0"
-        ax.plot(centers[valid], mse[valid], "o-", color=color,
-                linewidth=1.5, markersize=4)
-        ax.fill_between(centers[valid], 0, mse[valid], alpha=0.15, color=color)
-
-        ax2 = ax.twinx()
-        ax2.bar(centers[valid], counts[valid],
-                width=(centers[1] - centers[0]) * 0.6 if len(centers) > 1 else 1,
-                alpha=0.15, color="gray")
-        ax2.set_ylabel("Point count", color="gray", fontsize=8)
-        ax2.tick_params(axis="y", labelcolor="gray")
-
-        ax.set_xlabel(f"Actual {feat_name} value")
-        ax.set_ylabel("MSE")
-        ax.set_title(f"{feat_name}: MSE vs actual value")
-        ax.grid(True, alpha=0.3)
-
-    fig.suptitle(title, fontsize=12)
-    fig.tight_layout()
-    _save_fig(fig, out_path)
-
-
-
 # ── Convenience ──────────────────────────────────────────────────────────
-
 
 def plot_all(
     task: str,
@@ -652,7 +532,8 @@ def plot_all(
         )
         saved.append(p)
 
-    if task in ("seg_a",):
+    # Seg-A Plots
+    if task == "seg_a":
         if "confusion_matrix" in metrics and class_names:
             p = out_dir / "confusion_matrix.png"
             plot_confusion_matrix(metrics["confusion_matrix"], class_names, p)
@@ -668,59 +549,53 @@ def plot_all(
             )
             saved.append(p)
 
-    if task in ("seg_b_geom", "seg_b_color"):
+    # Seg-B Plots
+    elif task in ("seg_b_geom", "seg_b_color"):
         if "chamfer" in metrics:
             p = out_dir / "chamfer_histogram.png"
             plot_chamfer_histogram(metrics["chamfer"]["distances"], p)
             saved.append(p)
-
+            
         if "height_error" in metrics:
-            he = metrics["height_error"]
             p = out_dir / "height_wise_error.png"
+            he = metrics["height_error"]
             plot_height_wise_error(
-                he["bin_centers"],
-                he["mean_error"],
-                he["std_error"],
-                he["counts"],
-                p,
+                he["bin_centers"], he["mean_error"], he["std_error"], he["counts"], p
             )
             saved.append(p)
-
+            
         if "error_grid" in metrics:
+            p = out_dir / "spatial_error_heatmap.png"
             eg = metrics["error_grid"]
-            p = out_dir / "error_heatmap.png"
             plot_error_heatmap(eg["grid"], eg["x_edges"], eg["y_edges"], p)
             saved.append(p)
 
-    if task in ("mae"):
+    # MAE Plots
+    elif task == "mae":
         if "feature_mse" in metrics:
             p = out_dir / "per_feature_mse.png"
             plot_per_feature_mse(metrics["feature_mse"], p)
             saved.append(p)
-
+            
         if "feature_r2" in metrics:
-            p = out_dir / "r2_scores.png"
+            p = out_dir / "per_feature_r2.png"
             plot_r2_bars(metrics["feature_r2"], p)
             saved.append(p)
-
-        if "pred" in metrics and "target" in metrics:
-            p = out_dir / "pred_vs_actual.png"
+            
+        if all(k in metrics for k in ("pred", "target", "feature_names")):
+            p_scatter = out_dir / "pred_vs_actual.png"
             plot_pred_vs_actual(
-                metrics["pred"], metrics["target"],
-                metrics["feature_names"], p,
-                highlight=["z", "rel_z"],
+                metrics["pred"], metrics["target"], metrics["feature_names"], p_scatter
             )
-            saved.append(p)
+            saved.append(p_scatter)
 
-            p = out_dir / "error_distribution.png"
+            p_dist = out_dir / "error_distribution.png"
             plot_error_distribution(
-                metrics["pred"], metrics["target"],
-                metrics["feature_names"], p,
-                highlight=["z", "rel_z"],
+                metrics["pred"], metrics["target"], metrics["feature_names"], p_dist
             )
-            saved.append(p)
+            saved.append(p_dist)
 
-        if "bins_data" in metrics and metrics["bins_data"]:
+        if "bins_data" in metrics:
             p = out_dir / "error_by_value.png"
             plot_error_by_value(metrics["bins_data"], p)
             saved.append(p)

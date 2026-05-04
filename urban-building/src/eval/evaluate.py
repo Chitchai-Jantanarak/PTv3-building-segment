@@ -13,9 +13,13 @@ from src.eval.metrics import (
     boundary_iou,
     chamfer_stats,
     confusion_matrix,
+    error_by_value_bins,
     height_wise_error,
     per_class_iou,
+    per_feature_bias,
     per_feature_mse,
+    per_feature_r2,
+    per_feature_rmse,
     spatial_error_grid,
 )
 from src.eval.plots import plot_all
@@ -221,13 +225,6 @@ def evaluate_mae(
     pred   = data["reconstructed"]
     target = data["target"]
     feature_names = getattr(model, "target_feature_names", None)
-
-    # --- metrics ---
-    from src.eval.metrics import (
-        per_feature_mse, per_feature_rmse,
-        per_feature_bias, per_feature_r2,
-        error_by_value_bins,
-    )
 
     fm   = per_feature_mse(pred, target, feature_names)
     frm  = per_feature_rmse(pred, target, feature_names)

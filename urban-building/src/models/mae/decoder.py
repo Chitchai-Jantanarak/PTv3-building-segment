@@ -48,12 +48,30 @@ class MAEDecoder(nn.Module):
 
         self.mask_token = nn.Parameter(torch.zeros(1, latent_dim))
         nn.init.normal_(self.mask_token, std=0.02)
+    
+    def _normalize_coord(
+        self,
+        coord: Tensor,
+        batch: Tensor | None = None,
+    ) -> Tensor:
+        if batch is None:
+            c_min = coord.min(dim=0, keepdim=True).values
+            c_max = coord.max(dim=0, keepdim=True).values
+            span = (c_max - c_min).clamp(min=1.0)
+            return (coord - c_min) / span
 
-    def _normalize_coord(self, coord: Tensor) -> Tensor:
-        c_min = coord.min(dim=0, keepdim=True).values
-        c_max = coord.max(dim=0, keepdim=True).values
-        span = (c_max - c_min).clamp(min=1.0)
-        return (coord - c_min) / span # -> [0, 1]
+        batch_max = int(batch.max().item()) + 1
+        out = torch.empty_like(coord)
+        for b in range(batch_max):
+            mask = batch == b
+            if not mask.any():
+                continue
+            sub = coord[mask]
+            c_min = sub.min(dim=0, keepdim=True).values
+            c_max = sub.max(dim=0, keepdim=True).values
+            span = (c_max - c_min).clamp(min=1.0)
+            out[mask] = (sub - c_min) / span
+        return out
 
     def forward(
         self,
@@ -67,7 +85,7 @@ class MAEDecoder(nn.Module):
         n_vis = visible_indices.shape[0]
         n_msk = masked_indices.shape[0]
 
-        coord_norm = self._normalize_coord(coord)
+        coord_norm = self._normalize_coord(coord, batch)
 
         pos_all = self.pos_embed(coord_norm)                  
         pos_vis = pos_all[visible_indices]                    

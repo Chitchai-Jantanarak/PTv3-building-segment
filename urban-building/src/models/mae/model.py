@@ -67,6 +67,37 @@ class MAEModel(nn.Module):
                 weights[i] = 3.0 # x3
         return weights
 
+    @staticmethod
+    def _per_sample_stats(
+        target_feat: Tensor,
+        batch: Tensor,
+        min_std: float = 1e-3,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        n, f = target_feat.shape
+        device = target_feat.device
+        batch_max = int(batch.max().item()) + 1
+
+        mean_b = torch.zeros(batch_max, f, device=device, dtype=target_feat.dtype)
+        std_b = torch.ones(batch_max, f, device=device, dtype=target_feat.dtype)
+        valid_b = torch.zeros(batch_max, f, device=device, dtype=torch.bool)
+
+        for b in range(batch_max):
+            mask = batch == b
+            if mask.sum() <= 1:
+                continue
+            sample = target_feat[mask]
+            m = sample.mean(dim=0)
+            s = sample.std(dim=0, unbiased=False)
+            mean_b[b] = m
+            valid_b[b] = s > min_std
+            std_b[b] = s.clamp(min=min_std)
+
+        mean = mean_b[batch]
+        std = std_b[batch]
+        valid = valid_b[batch]
+        return mean, std, valid
+
+
     def forward(
         self,
         feat: Tensor,
@@ -106,9 +137,7 @@ class MAEModel(nn.Module):
         )
 
         target_feat = feat[:, self.target_feature_indices]
-        mean = target_feat.mean(dim=0, keepdim=True)
-        std = target_feat.std(dim=0, keepdim=True, unbiased=False) + 1e-6
-
+        mean, std, valid = self._per_sample_stats(target_feat, batch)
         reconstructed = reconstructed_norm * std + mean
 
         return {
@@ -116,6 +145,7 @@ class MAEModel(nn.Module):
             "reconstructed_norm": reconstructed_norm,
             "target_mean":        mean,
             "target_std":         std,
+            "target_valid":       valid,
             "visible_indices":    visible_idx,
             "masked_indices":     masked_idx,
             "visible_mask":       visible_mask,
@@ -127,21 +157,22 @@ class MAEModel(nn.Module):
         output: dict[str, Tensor],
         target: Tensor,
     ) -> Tensor:
-        reconstructed = output["reconstructed"]
+        reconstructed_norm = output["reconstructed_norm"]
         masked_idx = output["masked_indices"]
         mean = output["target_mean"]
         std = output["target_std"]
+        valid = output["target_valid"]
 
         target_norm = (target - mean) / std
 
-        mask = torch.zeros(target.shape[0], dtype=torch.bool, device=target.device)
-        mask[masked_idx] = True
-
-        weights = self.feature_loss_weights
-        diff = (reconstructed - target_norm) ** 2
-        diff = diff * weights.unsqueeze(0)
-
+        weights = self.feature_loss_weights.to(reconstructed_norm.dtype)
+        diff = (reconstructed_norm - target_norm) ** 2  
+        diff = diff * weights.unsqueeze(0) * valid.to(diff.dtype)
         loss = diff[mask].mean()
+
+        denom = (valid[masked_idx].to(diff.dtype) * weights.unsqueeze(0)).sum()
+        loss = diff[masked_idx].sum() / denom.clamp(min=1.0)
+
         return loss
 
     def build_target(self, feat: Tensor) -> Tensor:

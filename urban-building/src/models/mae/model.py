@@ -168,7 +168,6 @@ class MAEModel(nn.Module):
         weights = self.feature_loss_weights.to(reconstructed_norm.dtype)
         diff = (reconstructed_norm - target_norm) ** 2  
         diff = diff * weights.unsqueeze(0) * valid.to(diff.dtype)
-        loss = diff[mask].mean()
 
         denom = (valid[masked_idx].to(diff.dtype) * weights.unsqueeze(0)).sum()
         loss = diff[masked_idx].sum() / denom.clamp(min=1.0)

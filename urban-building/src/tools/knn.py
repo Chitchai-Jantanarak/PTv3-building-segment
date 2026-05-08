@@ -66,7 +66,13 @@ def block_local_knn(
             if ref_batch.shape[0] == 0:
                 continue
 
-            for b in range(int(ref_batch.max().item()) + 1):
+            ref_batch_min = ref_batch.min().item() if ref_batch.numel() > 0 else 0
+            ref_batch_max = ref_batch.max().item() if ref_batch.numel() > 0 else 0
+
+            if ref_batch_max < ref_batch_min:
+                continue
+
+            for b in range(ref_batch_min, ref_batch_max + 1):
                 ref_mask_b = ref_batch == b
                 if not ref_mask_b.any():
                     continue
@@ -74,8 +80,12 @@ def block_local_knn(
                 ref_coord_b = ref_coord[ref_mask_b]
                 ref_feat_b = ref_features[ref_mask_b]
 
+                if ref_coord_b.shape[0] == 0:
+                    continue
+
                 for i in range(C):
-                    if query_batch_chunk[i].item() != b:
+                    qb_val = query_batch_chunk[i].item()
+                    if qb_val < 0 or qb_val != b:
                         continue
 
                     diff = (query_chunk[i] - ref_coord_b).abs()

@@ -98,16 +98,32 @@ class MAEDecoder(nn.Module):
         batch: Tensor | None = None,
     ) -> Tensor:
         if ref_indices.shape[0] == 0:
-            N = query_indices.shape[0]
-            D = encoded.shape[1]
-            return torch.zeros(N, 4, device=encoded.device, dtype=encoded.dtype)
+            return torch.zeros(
+                query_indices.shape[0], 4, device=encoded.device, dtype=encoded.dtype
+            )
+
+        if query_indices.shape[0] == 0:
+            return torch.zeros(
+                query_indices.shape[0], 4, device=encoded.device, dtype=encoded.dtype
+            )
+
+        max_coord_idx = coord_norm.shape[0] - 1
+
+        if query_indices.max() > max_coord_idx or ref_indices.max() > max_coord_idx:
+            return torch.zeros(
+                query_indices.shape[0], 4, device=encoded.device, dtype=encoded.dtype
+            )
 
         query_coord = coord_norm[query_indices]
         ref_coord = coord_norm[ref_indices]
         ref_features = encoded[ref_indices]
 
-        query_batch = batch[query_indices] if batch is not None else None
-        ref_batch = batch[ref_indices] if batch is not None else None
+        if batch is not None:
+            query_batch = torch.clamp(batch[query_indices], min=0)
+            ref_batch = torch.clamp(batch[ref_indices], min=0)
+        else:
+            query_batch = None
+            ref_batch = None
 
         color_features = block_local_knn(
             query_coord=query_coord,

@@ -118,6 +118,19 @@ class MAEDecoder(nn.Module):
         ref_coord = coord_norm[ref_indices]
         ref_features = encoded[ref_indices]
 
+        if (
+            torch.isnan(query_coord).any()
+            or torch.isinf(query_coord).any()
+            or torch.isnan(ref_coord).any()
+            or torch.isinf(ref_coord).any()
+        ):
+            return torch.zeros(
+                query_indices.shape[0], 4, device=encoded.device, dtype=encoded.dtype
+            )
+
+        query_coord = torch.clamp(query_coord, 0.0, 1.0)
+        ref_coord = torch.clamp(ref_coord, 0.0, 1.0)
+
         if batch is not None:
             query_batch = torch.clamp(batch[query_indices], min=0)
             ref_batch = torch.clamp(batch[ref_indices], min=0)

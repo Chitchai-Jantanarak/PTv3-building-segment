@@ -91,55 +91,29 @@ class MAEDecoder(nn.Module):
 
     def _color_context(
         self,
-        encoded: Tensor,
-        coord_norm: Tensor,
-        query_indices: Tensor,
-        ref_indices: Tensor,
-        batch: Tensor | None = None,
+        ref_features: Tensor,
+        ref_coord: Tensor,
+        query_coord: Tensor,
+        query_batch: Tensor | None = None,
+        ref_batch: Tensor | None = None,
     ) -> Tensor:
-        if ref_indices.shape[0] == 0:
+        n_query = query_coord.shape[0]
+        if ref_features.shape[0] == 0 or n_query == 0:
             return torch.zeros(
-                query_indices.shape[0], 4, device=encoded.device, dtype=encoded.dtype
+                n_query, 4, device=ref_features.device, dtype=ref_features.dtype
             )
 
-        if query_indices.shape[0] == 0:
-            return torch.zeros(
-                query_indices.shape[0], 4, device=encoded.device, dtype=encoded.dtype
-            )
+        query_coord = torch.nan_to_num(
+            query_coord, nan=0.0, posinf=1.0, neginf=0.0
+        ).clamp(0.0, 1.0)
+        ref_coord = torch.nan_to_num(
+            ref_coord, nan=0.0, posinf=1.0, neginf=0.0
+        ).clamp(0.0, 1.0)
 
-        max_coord_idx = coord_norm.shape[0] - 1
-
-        if query_indices.max() > max_coord_idx or ref_indices.max() > max_coord_idx:
-            return torch.zeros(
-                query_indices.shape[0], 4, device=encoded.device, dtype=encoded.dtype
-            )
-
-        query_coord = coord_norm[query_indices].clone()
-        ref_coord = coord_norm[ref_indices].clone()
-        ref_features = encoded[ref_indices].clone()
-
-        query_coord = torch.where(
-            torch.isnan(query_coord), torch.zeros_like(query_coord), query_coord
-        )
-        query_coord = torch.where(
-            torch.isinf(query_coord), torch.zeros_like(query_coord), query_coord
-        )
-        ref_coord = torch.where(
-            torch.isnan(ref_coord), torch.zeros_like(ref_coord), ref_coord
-        )
-        ref_coord = torch.where(
-            torch.isinf(ref_coord), torch.zeros_like(ref_coord), ref_coord
-        )
-
-        query_coord = torch.clamp(query_coord, 0.0, 1.0)
-        ref_coord = torch.clamp(ref_coord, 0.0, 1.0)
-
-        if batch is not None:
-            query_batch = torch.clamp(batch[query_indices], min=0)
-            ref_batch = torch.clamp(batch[ref_indices], min=0)
-        else:
-            query_batch = None
-            ref_batch = None
+        if query_batch is not None:
+            query_batch = torch.clamp(query_batch, min=0)
+        if ref_batch is not None:
+            ref_batch = torch.clamp(ref_batch, min=0)
 
         color_features = block_local_knn(
             query_coord=query_coord,
@@ -215,8 +189,17 @@ class MAEDecoder(nn.Module):
         geom_msk = self.geom_head(masked_features)
         reconstructed[masked_indices, :4] = geom_msk.to(encoded.dtype)
 
+        vis_coord = coord_norm[visible_indices]
+        msk_coord = coord_norm[masked_indices]
+        vis_batch = batch[visible_indices] if batch is not None else None
+        msk_batch = batch[masked_indices] if batch is not None else None
+
         color_msk = self._color_context(
-            encoded, coord_norm, masked_indices, visible_indices, batch
+            ref_features=encoded,
+            ref_coord=vis_coord,
+            query_coord=msk_coord,
+            query_batch=msk_batch,
+            ref_batch=vis_batch,
         )
         reconstructed[masked_indices, 4:] = color_msk.to(encoded.dtype)
 
@@ -225,7 +208,11 @@ class MAEDecoder(nn.Module):
         reconstructed[visible_indices, :4] = geom_vis.to(encoded.dtype)
 
         color_vis = self._color_context(
-            encoded, coord_norm, visible_indices, visible_indices, batch
+            ref_features=encoded,
+            ref_coord=vis_coord,
+            query_coord=vis_coord,
+            query_batch=vis_batch,
+            ref_batch=vis_batch,
         )
         reconstructed[visible_indices, 4:] = color_vis.to(encoded.dtype)
 

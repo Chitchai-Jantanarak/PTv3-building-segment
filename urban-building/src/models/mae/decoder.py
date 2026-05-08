@@ -118,12 +118,20 @@ class MAEDecoder(nn.Module):
         ref_coord = coord_norm[ref_indices]
         ref_features = encoded[ref_indices]
 
-        if (
-            torch.isnan(query_coord).any()
-            or torch.isinf(query_coord).any()
-            or torch.isnan(ref_coord).any()
-            or torch.isinf(ref_coord).any()
-        ):
+        try:
+            if (
+                torch.isnan(query_coord).any()
+                or torch.isinf(query_coord).any()
+                or torch.isnan(ref_coord).any()
+                or torch.isinf(ref_coord).any()
+            ):
+                return torch.zeros(
+                    query_indices.shape[0],
+                    4,
+                    device=encoded.device,
+                    dtype=encoded.dtype,
+                )
+        except Exception:
             return torch.zeros(
                 query_indices.shape[0], 4, device=encoded.device, dtype=encoded.dtype
             )

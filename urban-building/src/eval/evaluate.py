@@ -101,13 +101,18 @@ def _collect_mae_predictions(
     dataloader: DataLoader,
     device: torch.device,
 ) -> dict[str, np.ndarray]:
-    """Run MAE model on dataloader, collect reconstructed + original features."""
+    """Run MAE model on dataloader, collect reconstructed + original features.
+
+    Also stashes the first batch's full per-point tensors under `sample_*` keys
+    so 3D diagnostic plots have something to render.
+    """
     model.eval()
     all_recon = []
     all_target = []
+    sample_payload: dict[str, np.ndarray] | None = None
 
     with torch.no_grad():
-        for batch in dataloader:
+        for i, batch in enumerate(dataloader):
             feat = batch["points"].to(device)
             coord = batch["coords"].to(device)
             batch_idx = batch["batch"].to(device)
@@ -115,20 +120,63 @@ def _collect_mae_predictions(
             output = model(feat, coord, batch_idx)
 
             masked_idx = output["masked_indices"]
-            recon = output["reconstructed"][masked_idx].cpu().numpy()
+            recon_full = output["reconstructed"]
             if hasattr(model, "build_target"):
                 target_tensor = model.build_target(feat)
             else:
                 target_tensor = feat
-            target = target_tensor[masked_idx].cpu().numpy()
 
+            recon = recon_full[masked_idx].cpu().numpy()
+            target = target_tensor[masked_idx].cpu().numpy()
             all_recon.append(recon)
             all_target.append(target)
 
-    return {
+            # Stash first batch as a 3D-plot sample. Restrict to the first
+            # cloud (batch idx 0) so coords are a single contiguous scene.
+            if sample_payload is None:
+                first_mask = batch_idx == 0
+                sel = first_mask.nonzero(as_tuple=False).squeeze(-1)
+                if sel.numel() > 0:
+                    sel_set = set(sel.tolist())
+                    vis_full = output["visible_indices"]
+                    msk_full = output["masked_indices"]
+                    enc_full = output.get("encoded")
+
+                    vis_local = torch.tensor(
+                        [j for j, g in enumerate(vis_full.tolist()) if g in sel_set],
+                        dtype=torch.long, device=vis_full.device,
+                    )
+                    sel_list = sel.tolist()
+                    g_to_local = {g: k for k, g in enumerate(sel_list)}
+
+                    vis_global = vis_full[vis_local].tolist()
+                    msk_global = [g for g in msk_full.tolist() if g in sel_set]
+                    vis_local_remap = np.array(
+                        [g_to_local[g] for g in vis_global], dtype=np.int64
+                    )
+                    msk_local_remap = np.array(
+                        [g_to_local[g] for g in msk_global], dtype=np.int64
+                    )
+
+                    sample_payload = {
+                        "coord":            coord[sel].cpu().numpy(),
+                        "target":           target_tensor[sel].cpu().numpy(),
+                        "reconstructed":    recon_full[sel].cpu().numpy(),
+                        "visible_indices":  vis_local_remap,
+                        "masked_indices":   msk_local_remap,
+                    }
+                    if enc_full is not None and vis_local.numel() > 0:
+                        sample_payload["encoded"] = (
+                            enc_full[vis_local].cpu().numpy()
+                        )
+
+    result = {
         "reconstructed": np.concatenate(all_recon),
         "target": np.concatenate(all_target),
     }
+    if sample_payload is not None:
+        result["sample"] = sample_payload
+    return result
 
 
 def evaluate_seg_a(
@@ -246,7 +294,7 @@ def evaluate_mae(
             idx = feature_names.index(feat)
             bins_data[feat] = error_by_value_bins(pred, target, idx)
 
-    return {
+    result = {
         "feature_mse":  fm,
         "feature_rmse": frm,
         "feature_bias": fb,
@@ -256,6 +304,11 @@ def evaluate_mae(
         "target":       target,
         "feature_names": names,
     }
+    if "sample" in data:
+        sample = data["sample"]
+        sample["feature_names"] = names
+        result["sample_3d"] = sample
+    return result
 
 def run_evaluation(
     task: str,

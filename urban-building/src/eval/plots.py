@@ -576,12 +576,12 @@ def plot_all(
             p = out_dir / "per_feature_mse.png"
             plot_per_feature_mse(metrics["feature_mse"], p)
             saved.append(p)
-            
+
         if "feature_r2" in metrics:
             p = out_dir / "per_feature_r2.png"
             plot_r2_bars(metrics["feature_r2"], p)
             saved.append(p)
-            
+
         if all(k in metrics for k in ("pred", "target", "feature_names")):
             p_scatter = out_dir / "pred_vs_actual.png"
             plot_pred_vs_actual(
@@ -599,5 +599,9 @@ def plot_all(
             p = out_dir / "error_by_value.png"
             plot_error_by_value(metrics["bins_data"], p)
             saved.append(p)
+
+        if "sample_3d" in metrics:
+            from src.eval.plots_3d import plot_all_3d
+            saved.extend(plot_all_3d(metrics["sample_3d"], out_dir / "3d"))
 
     return saved

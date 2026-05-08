@@ -114,27 +114,22 @@ class MAEDecoder(nn.Module):
                 query_indices.shape[0], 4, device=encoded.device, dtype=encoded.dtype
             )
 
-        query_coord = coord_norm[query_indices]
-        ref_coord = coord_norm[ref_indices]
-        ref_features = encoded[ref_indices]
+        query_coord = coord_norm[query_indices].clone()
+        ref_coord = coord_norm[ref_indices].clone()
+        ref_features = encoded[ref_indices].clone()
 
-        try:
-            if (
-                torch.isnan(query_coord).any()
-                or torch.isinf(query_coord).any()
-                or torch.isnan(ref_coord).any()
-                or torch.isinf(ref_coord).any()
-            ):
-                return torch.zeros(
-                    query_indices.shape[0],
-                    4,
-                    device=encoded.device,
-                    dtype=encoded.dtype,
-                )
-        except Exception:
-            return torch.zeros(
-                query_indices.shape[0], 4, device=encoded.device, dtype=encoded.dtype
-            )
+        query_coord = torch.where(
+            torch.isnan(query_coord), torch.zeros_like(query_coord), query_coord
+        )
+        query_coord = torch.where(
+            torch.isinf(query_coord), torch.zeros_like(query_coord), query_coord
+        )
+        ref_coord = torch.where(
+            torch.isnan(ref_coord), torch.zeros_like(ref_coord), ref_coord
+        )
+        ref_coord = torch.where(
+            torch.isinf(ref_coord), torch.zeros_like(ref_coord), ref_coord
+        )
 
         query_coord = torch.clamp(query_coord, 0.0, 1.0)
         ref_coord = torch.clamp(ref_coord, 0.0, 1.0)

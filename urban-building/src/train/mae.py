@@ -29,12 +29,6 @@ def train_mae(cfg: DictConfig) -> None:
     model = MAEForPretraining(cfg)
     logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    train_loader = build_dataloader(cfg, split="train")
-    val_loader = build_dataloader(cfg, split="val")
-
-    optimizer = build_optimizer(cfg, model)
-    scheduler = build_scheduler(cfg, optimizer)
-
     ckpt_dir = Path(cfg.paths.ckpt_root) / cfg.task.name
     best_ckpt = ckpt_dir / "best.pt"
 
@@ -43,12 +37,23 @@ def train_mae(cfg: DictConfig) -> None:
         load_ckpt(
             path=best_ckpt,
             model=model,
-            optimizer=None,    
+            optimizer=None,
             strict=True,
             device=cfg.run.device,
         )
     else:
         logger.info("No checkpoint found — training from scratch")
+
+    if cfg.task.get("freeze_encoder", False):
+        logger.info("Freezing encoder")
+        for param in model.encoder.parameters():
+            param.requires_grad = False
+
+    train_loader = build_dataloader(cfg, split="train")
+    val_loader = build_dataloader(cfg, split="val")
+
+    optimizer = build_optimizer(cfg, model)
+    scheduler = build_scheduler(cfg, optimizer)
 
     result = train_loop(
         cfg=cfg,

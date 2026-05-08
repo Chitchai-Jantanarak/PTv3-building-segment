@@ -1,7 +1,7 @@
 name: mae
 stage: 0
 model: mae
-freeze_encoder: false
+freeze_encoder: true
 
 masking:
   type: block
@@ -18,19 +18,25 @@ features:
   rgb: true
   intensity: auto
 
+color_decoder:
+  k: 8
+  block_size: 0.05
+
+n_heads: 8
+
 optimizer:
   type: adamw
   lr: 1e-4
-  encoder_lr: 5e-5
-  head_lr: 3e-4
+  # encoder_lr: 5e-5
+  # head_lr: 3e-4
   weight_decay: 0.05
 
 scheduler:
   type: cosine
-  warmup_epochs: 20
+  warmup_epochs: 10
 
 precision: bf16
-epochs: 100
+epochs: 150
 batch_size: 6
 num_workers: 4
 max_batch_points: 400000

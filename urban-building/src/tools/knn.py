@@ -16,9 +16,17 @@ def block_local_knn(
     D = ref_features.shape[1]
     device = query_coord.device
 
+    if N == 0 or ref_coord.shape[0] == 0:
+        return torch.zeros(N, D, device=device, dtype=ref_features.dtype)
+
     output = torch.zeros(N, D, device=device, dtype=ref_features.dtype)
 
-    has_batch = query_batch is not None and ref_batch is not None
+    has_batch = (
+        query_batch is not None
+        and ref_batch is not None
+        and query_batch.shape[0] > 0
+        and ref_batch.shape[0] > 0
+    )
 
     for start in range(0, N, chunk_size):
         end = min(start + chunk_size, N)
@@ -54,6 +62,9 @@ def block_local_knn(
                 ).sum(dim=0)
         else:
             query_batch_chunk = query_batch[start:end]
+
+            if ref_batch.shape[0] == 0:
+                continue
 
             for b in range(int(ref_batch.max().item()) + 1):
                 ref_mask_b = ref_batch == b

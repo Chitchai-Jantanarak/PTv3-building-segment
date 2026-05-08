@@ -97,6 +97,11 @@ class MAEDecoder(nn.Module):
         ref_indices: Tensor,
         batch: Tensor | None = None,
     ) -> Tensor:
+        if ref_indices.shape[0] == 0:
+            N = query_indices.shape[0]
+            D = encoded.shape[1]
+            return torch.zeros(N, 4, device=encoded.device, dtype=encoded.dtype)
+
         query_coord = coord_norm[query_indices]
         ref_coord = coord_norm[ref_indices]
         ref_features = encoded[ref_indices]

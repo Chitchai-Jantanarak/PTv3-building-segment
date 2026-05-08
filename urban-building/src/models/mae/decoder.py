@@ -5,6 +5,8 @@ import torch.nn as nn
 from omegaconf import DictConfig
 from torch import Tensor
 
+from src.tools.knn import block_local_knn
+
 
 class MAEDecoder(nn.Module):
     def __init__(
@@ -17,8 +19,10 @@ class MAEDecoder(nn.Module):
         super().__init__()
 
         hidden_dim = latent_dim // 2
+        geom_dim = 4
+        color_dim = 4
 
-        self.register_buffer("coord_scale", torch.tensor(1.0)) # abs coords
+        self.register_buffer("coord_scale", torch.tensor(1.0))
 
         self.pos_embed = nn.Sequential(
             nn.Linear(coord_dim, latent_dim),
@@ -27,8 +31,8 @@ class MAEDecoder(nn.Module):
             nn.Linear(latent_dim, latent_dim),
         )
 
-        n_heads = cfg.model.get("n_heads", 8)
-        
+        n_heads = cfg.get("n_heads", 8)
+
         self.cross_attn = nn.MultiheadAttention(
             embed_dim=latent_dim,
             num_heads=n_heads,
@@ -37,18 +41,30 @@ class MAEDecoder(nn.Module):
         )
         self.attn_norm = nn.LayerNorm(latent_dim)
 
-        self.decoder = nn.Sequential(
+        self.geom_head = nn.Sequential(
             nn.Linear(latent_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
             nn.GELU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.GELU(),
-            nn.Linear(hidden_dim, output_dim),
+            nn.Linear(hidden_dim, geom_dim),
         )
+
+        self.color_head = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, color_dim),
+        )
+
+        self.color_k = cfg.color_decoder.get("k", 8)
+        self.color_block_size = cfg.color_decoder.get("block_size", 0.05)
 
         self.mask_token = nn.Parameter(torch.zeros(1, latent_dim))
         nn.init.normal_(self.mask_token, std=0.02)
-    
+
     def _normalize_coord(
         self,
         coord: Tensor,
@@ -73,6 +89,34 @@ class MAEDecoder(nn.Module):
             out[mask] = (sub - c_min) / span
         return out
 
+    def _color_context(
+        self,
+        encoded: Tensor,
+        coord_norm: Tensor,
+        query_indices: Tensor,
+        ref_indices: Tensor,
+        batch: Tensor | None = None,
+    ) -> Tensor:
+        query_coord = coord_norm[query_indices]
+        ref_coord = coord_norm[ref_indices]
+        ref_features = encoded[ref_indices]
+
+        query_batch = batch[query_indices] if batch is not None else None
+        ref_batch = batch[ref_indices] if batch is not None else None
+
+        color_features = block_local_knn(
+            query_coord=query_coord,
+            ref_coord=ref_coord,
+            ref_features=ref_features,
+            query_batch=query_batch,
+            ref_batch=ref_batch,
+            k=self.color_k,
+            block_size=self.color_block_size,
+            chunk_size=2048,
+        )
+
+        return self.color_head(color_features)
+
     def forward(
         self,
         encoded: Tensor,
@@ -82,60 +126,72 @@ class MAEDecoder(nn.Module):
         coord: Tensor | None = None,
         batch: Tensor | None = None,
     ) -> Tensor:
-        n_vis = visible_indices.shape[0]
         n_msk = masked_indices.shape[0]
 
         coord_norm = self._normalize_coord(coord, batch)
 
-        pos_all = self.pos_embed(coord_norm)                  
-        pos_vis = pos_all[visible_indices]                    
-        pos_msk = pos_all[masked_indices]                     
+        pos_all = self.pos_embed(coord_norm)
+        pos_vis = pos_all[visible_indices]
+        pos_msk = pos_all[masked_indices]
 
-        kv = encoded + pos_vis                                
+        kv = encoded + pos_vis
 
-        q = self.mask_token.expand(n_msk, -1) + pos_msk      
+        q = self.mask_token.expand(n_msk, -1) + pos_msk
 
         if batch is None:
-            kv_seq = kv.unsqueeze(0)        
-            q_seq  = q.unsqueeze(0)         
+            kv_seq = kv.unsqueeze(0)
+            q_seq = q.unsqueeze(0)
 
             attn_out, _ = self.cross_attn(q_seq, kv_seq, kv_seq, need_weights=False)
-            attn_out = attn_out.squeeze(0)                        
+            attn_out = attn_out.squeeze(0)
         else:
             attn_out = torch.zeros_like(q)
             vis_batch = batch[visible_indices]
             msk_batch = batch[masked_indices]
-            
+
             batch_max = int(batch.max().item()) + 1
             for b in range(batch_max):
                 vis_mask_b = vis_batch == b
                 msk_mask_b = msk_batch == b
-                
+
                 if not msk_mask_b.any():
                     continue
-                    
+
                 q_b = q[msk_mask_b].unsqueeze(0)
-                
+
                 if not vis_mask_b.any():
-                    attn_out[msk_mask_b] = torch.zeros_like(q_b.squeeze(0), dtype=attn_out.dtype)
+                    attn_out[msk_mask_b] = torch.zeros_like(
+                        q_b.squeeze(0), dtype=attn_out.dtype
+                    )
                     continue
-                    
+
                 kv_b = kv[vis_mask_b].unsqueeze(0)
                 out_b, _ = self.cross_attn(q_b, kv_b, kv_b, need_weights=False)
                 attn_out[msk_mask_b] = out_b.squeeze(0).to(attn_out.dtype)
 
-        masked_features = self.attn_norm(q + attn_out)        
+        masked_features = self.attn_norm(q + attn_out)
 
-        full_features = torch.zeros(n_total, masked_features.shape[-1],
-                                    device=encoded.device, dtype=encoded.dtype)
-        full_features[masked_indices] = masked_features.to(encoded.dtype)
+        reconstructed = torch.zeros(
+            n_total, 8, device=encoded.device, dtype=encoded.dtype
+        )
 
-        reconstructed = torch.zeros(n_total, self.decoder[-1].out_features,
-                                    device=encoded.device, dtype=encoded.dtype)
-        reconstructed[masked_indices] = self.decoder(masked_features).to(encoded.dtype)
+        geom_msk = self.geom_head(masked_features)
+        reconstructed[masked_indices, :4] = geom_msk.to(encoded.dtype)
+
+        color_msk = self._color_context(
+            encoded, coord_norm, masked_indices, visible_indices, batch
+        )
+        reconstructed[masked_indices, 4:] = color_msk.to(encoded.dtype)
 
         vis_feat = encoded + pos_vis
-        reconstructed[visible_indices] = self.decoder(vis_feat).to(encoded.dtype)
+        geom_vis = self.geom_head(vis_feat)
+        reconstructed[visible_indices, :4] = geom_vis.to(encoded.dtype)
+
+        color_vis = self._color_context(
+            encoded, coord_norm, visible_indices, visible_indices, batch
+        )
+        reconstructed[visible_indices, 4:] = color_vis.to(encoded.dtype)
+
         return reconstructed
 
 

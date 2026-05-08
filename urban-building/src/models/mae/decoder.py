@@ -31,7 +31,7 @@ class MAEDecoder(nn.Module):
             nn.Linear(latent_dim, latent_dim),
         )
 
-        n_heads = cfg.get("n_heads", 8)
+        n_heads = cfg.task.get("n_heads", 8)
 
         self.cross_attn = nn.MultiheadAttention(
             embed_dim=latent_dim,
@@ -59,8 +59,8 @@ class MAEDecoder(nn.Module):
             nn.Linear(hidden_dim, color_dim),
         )
 
-        self.color_k = cfg.color_decoder.get("k", 8)
-        self.color_block_size = cfg.color_decoder.get("block_size", 0.05)
+        self.color_k = cfg.task.color_decoder.get("k", 8)
+        self.color_block_size = cfg.task.color_decoder.get("block_size", 0.05)
 
         self.mask_token = nn.Parameter(torch.zeros(1, latent_dim))
         nn.init.normal_(self.mask_token, std=0.02)

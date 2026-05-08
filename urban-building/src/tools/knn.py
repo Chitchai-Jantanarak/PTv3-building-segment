@@ -28,6 +28,15 @@ def block_local_knn(
         and ref_batch.shape[0] > 0
     )
 
+    if has_batch:
+        try:
+            ref_batch_min = ref_batch.min().item()
+            ref_batch_max = ref_batch.max().item()
+            if ref_batch_max < ref_batch_min or ref_batch_max > 10000:
+                has_batch = False
+        except Exception:
+            has_batch = False
+
     for start in range(0, N, chunk_size):
         end = min(start + chunk_size, N)
         query_chunk = query_coord[start:end]
@@ -66,8 +75,11 @@ def block_local_knn(
             if ref_batch.shape[0] == 0:
                 continue
 
-            ref_batch_min = ref_batch.min().item() if ref_batch.numel() > 0 else 0
-            ref_batch_max = ref_batch.max().item() if ref_batch.numel() > 0 else 0
+            try:
+                ref_batch_min = int(ref_batch.min().item())
+                ref_batch_max = int(ref_batch.max().item())
+            except Exception:
+                continue
 
             if ref_batch_max < ref_batch_min:
                 continue

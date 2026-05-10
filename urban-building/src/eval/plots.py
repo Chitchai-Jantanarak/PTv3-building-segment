@@ -602,6 +602,6 @@ def plot_all(
 
         if "sample_3d" in metrics:
             from src.eval.plots_3d import plot_all_3d
-            saved.extend(plot_all_3d(metrics["sample_3d"], out_dir / "3d"))
+            saved.extend(plot_all_3d(metrics["sample_3d"], out_dir))
 
     return saved

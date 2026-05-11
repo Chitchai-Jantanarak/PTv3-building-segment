@@ -21,6 +21,7 @@ class MAEDecoder(nn.Module):
         hidden_dim = latent_dim // 2
         geom_dim = 4
         color_dim = 4
+        self.color_dim = color_dim
 
         self.register_buffer("coord_scale", torch.tensor(1.0))
 
@@ -101,9 +102,10 @@ class MAEDecoder(nn.Module):
         n_query = query_coord.shape[0]
         if ref_features.shape[0] == 0 or n_query == 0:
             return torch.zeros(
-                n_query, 4, 
-                device=ref_features.device, 
-                dtype=ref_features.dtype
+                n_query,
+                self.color_dim,
+                device=ref_features.device,
+                dtype=ref_features.dtype,
             )
 
         query_coord = torch.nan_to_num(
@@ -196,7 +198,19 @@ class MAEDecoder(nn.Module):
         vis_batch_ = batch[visible_indices] if batch is not None else None
         msk_batch_ = batch[masked_indices] if batch is not None else None
 
-        color_ref = visible_raw_feat if visible_raw_feat is not None else encoded
+        if visible_raw_feat is None:
+            raise ValueError(
+                "visible_raw_feat is required because color_head expects "
+                "raw 4-dim [r, g, b, intensity] features."
+            )
+
+        if visible_raw_feat.shape[1] != 4:
+            raise ValueError(
+                f"visible_raw_feat must have shape (N_visible, 4), "
+                f"got {tuple(visible_raw_feat.shape)}"
+            )
+
+        color_ref = visible_raw_feat.to(device=encoded.device, dtype=encoded.dtype)
 
         color_msk = self._color_context(
             ref_features=color_ref,

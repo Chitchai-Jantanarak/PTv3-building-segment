@@ -35,12 +35,21 @@ def save_ckpt(
     return str(filepath)
 
 
+from pathlib import Path
+from typing import Any
+
+import torch
+import torch.nn as nn
+from torch.optim import Optimizer
+
+
 def load_ckpt(
     path: str | Path,
     model: nn.Module,
     optimizer: Optimizer | None = None,
     strict: bool = True,
     device: str | None = None,
+    load_optimizer: bool = True,
 ) -> dict[str, Any]:
     path = Path(path)
 
@@ -48,9 +57,59 @@ def load_ckpt(
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
     state = torch.load(path, map_location=device)
-    model.load_state_dict(state["model_state_dict"], strict=strict)
 
-    if optimizer and "optimizer_state_dict" in state:
+    ckpt_sd = state["model_state_dict"]
+    model_sd = model.state_dict()
+
+    # strict=True keeps old behavior
+    if strict:
+        model.load_state_dict(ckpt_sd, strict=True)
+    else:
+        filtered_sd = {}
+        skipped = []
+
+        for key, value in ckpt_sd.items():
+            if key not in model_sd:
+                skipped.append(
+                    f"{key}: not in current model"
+                )
+                continue
+
+            if model_sd[key].shape != value.shape:
+                skipped.append(
+                    f"{key}: ckpt={tuple(value.shape)} "
+                    f"model={tuple(model_sd[key].shape)}"
+                )
+                continue
+
+            filtered_sd[key] = value
+
+        missing, unexpected = model.load_state_dict(filtered_sd, strict=False)
+
+        print(f"Loaded {len(filtered_sd)}/{len(ckpt_sd)} checkpoint tensors")
+
+        if skipped:
+            print("Skipped incompatible checkpoint tensors:")
+            for item in skipped:
+                print(f"  {item}")
+
+        if missing:
+            print(f"Missing keys after partial load: {len(missing)}")
+            for key in missing:
+                print(f"  {key}")
+
+        if unexpected:
+            print(f"Unexpected keys after partial load: {len(unexpected)}")
+            for key in unexpected:
+                print(f"  {key}")
+
+    # Important: avoid loading optimizer after architecture changed
+    if (
+        optimizer is not None
+        and load_optimizer
+        and strict
+        and "optimizer_state_dict" in state
+    ):
         optimizer.load_state_dict(state["optimizer_state_dict"])
 
     return state

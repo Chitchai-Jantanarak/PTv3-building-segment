@@ -21,6 +21,7 @@ features:
 color_decoder:
   k: 8
   block_size: 0.05
+  chunk_size: 8192
 
 n_heads: 8
 

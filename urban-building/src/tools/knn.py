@@ -1,126 +1,121 @@
+# src/tools/knn.py
+
 import torch
 from torch import Tensor
 
 
 def block_local_knn(
-    query_coord: Tensor,
-    ref_coord: Tensor,
-    ref_features: Tensor,
+    query_coord: Tensor,      # (N_q, 3) normalized [0,1]
+    ref_coord: Tensor,        # (N_r, 3) normalized [0,1]
+    ref_features: Tensor,     # (N_r, D)
     query_batch: Tensor | None = None,
     ref_batch: Tensor | None = None,
     k: int = 8,
     block_size: float = 0.05,
-    chunk_size: int = 2048,
+    chunk_size: int = 2048,  
 ) -> Tensor:
-    N = query_coord.shape[0]
-    D = ref_features.shape[1]
+    N_q = query_coord.shape[0]
+    D   = ref_features.shape[1]
     device = query_coord.device
+    dtype  = ref_features.dtype
 
-    if N == 0 or ref_coord.shape[0] == 0:
-        return torch.zeros(N, D, device=device, dtype=ref_features.dtype)
-
-    output = torch.zeros(N, D, device=device, dtype=ref_features.dtype)
+    if N_q == 0 or ref_coord.shape[0] == 0:
+        return torch.zeros(N_q, D, device=device, dtype=dtype)
 
     has_batch = (
         query_batch is not None
         and ref_batch is not None
-        and query_batch.shape[0] > 0
-        and ref_batch.shape[0] > 0
+        and query_batch.numel() > 0
+        and ref_batch.numel() > 0
     )
 
     if has_batch:
-        try:
-            ref_batch_min = ref_batch.min().item()
-            ref_batch_max = ref_batch.max().item()
-            if ref_batch_max < ref_batch_min or ref_batch_max > 10000:
-                has_batch = False
-        except Exception:
-            has_batch = False
+        return _batched_knn(
+            query_coord, ref_coord, ref_features,
+            query_batch, ref_batch,
+            k, block_size, chunk_size,
+        )
+    else:
+        return _single_knn(
+            query_coord, ref_coord, ref_features,
+            k, block_size, chunk_size,
+        )
 
-    for start in range(0, N, chunk_size):
-        end = min(start + chunk_size, N)
-        query_chunk = query_coord[start:end]
-        C = query_chunk.shape[0]
 
-        if not has_batch:
-            diff = (query_chunk.unsqueeze(1) - ref_coord.unsqueeze(0)).abs()
-            in_box = diff.max(dim=-1).values < block_size
+def _single_knn(
+    query_coord: Tensor,   # (N_q, 3)
+    ref_coord: Tensor,     # (N_r, 3)
+    ref_features: Tensor,  # (N_r, D)
+    k: int,
+    block_size: float,
+    chunk_size: int,
+) -> Tensor:
+    N_q, D = query_coord.shape[0], ref_features.shape[1]
+    device, dtype = query_coord.device, ref_features.dtype
+    output = torch.zeros(N_q, D, device=device, dtype=dtype)
 
-            for i in range(C):
-                local_mask = in_box[i]
-                n_local = local_mask.sum().item()
+    for start in range(0, N_q, chunk_size):
+        end   = min(start + chunk_size, N_q)
+        q     = query_coord[start:end]     # (C, 3)
+        C     = q.shape[0]
 
-                if n_local == 0:
-                    dist_all = ((query_chunk[i] - ref_coord) ** 2).sum(dim=-1)
-                    nearest = dist_all.argmin()
-                    output[start + i] = ref_features[nearest]
-                    continue
+        diff  = (q.unsqueeze(1) - ref_coord.unsqueeze(0)).abs()  # (C, N_r, 3)
+        in_box = diff.amax(dim=-1) < block_size                   # (C, N_r) bool
+        l2 = (q.unsqueeze(1) - ref_coord.unsqueeze(0)).pow(2).sum(-1)  # (C, N_r)
 
-                local_features = ref_features[local_mask]
-                local_coords = ref_coord[local_mask]
+        l2_masked = l2.masked_fill(~in_box, float("inf"))              # (C, N_r)
 
-                k_actual = min(k, n_local)
-                dists = ((query_chunk[i] - local_coords) ** 2).sum(dim=-1)
-                topk_dists, topk_idx = dists.topk(k_actual, largest=False)
+        all_inf = (~in_box).all(dim=-1)                                 # (C,) bool
+        if all_inf.any():
+            l2_masked[all_inf] = l2[all_inf]   # use unmasked distances
 
-                weights = 1.0 / (topk_dists + 1e-6)
-                weights = weights / weights.sum()
+        k_actual = min(k, ref_coord.shape[0])
+        topk_dists, topk_idx = l2_masked.topk(k_actual, dim=1, largest=False)
+                                                                        # (C, k)
 
-                output[start + i] = (
-                    local_features[topk_idx] * weights.unsqueeze(-1)
-                ).sum(dim=0)
-        else:
-            query_batch_chunk = query_batch[start:end]
+        weights = 1.0 / (topk_dists + 1e-6)                            # (C, k)
+        weights = weights / weights.sum(dim=1, keepdim=True)            # (C, k)
+        idx_expanded = topk_idx.unsqueeze(-1).expand(-1, -1, D)         # (C, k, D)
+        neighbor_feats = ref_features.unsqueeze(0).expand(C, -1, -1)    # (C, N_r, D)
+        neighbor_feats = neighbor_feats.gather(1, idx_expanded)          # (C, k, D)
 
-            if ref_batch.shape[0] == 0:
-                continue
+        output[start:end] = (neighbor_feats * weights.unsqueeze(-1)).sum(dim=1)
 
-            try:
-                ref_batch_min = int(ref_batch.min().item())
-                ref_batch_max = int(ref_batch.max().item())
-            except Exception:
-                continue
+    return output
 
-            if ref_batch_max < ref_batch_min:
-                continue
 
-            for b in range(ref_batch_min, ref_batch_max + 1):
-                ref_mask_b = ref_batch == b
-                if not ref_mask_b.any():
-                    continue
+def _batched_knn(
+    query_coord: Tensor,
+    ref_coord: Tensor,
+    ref_features: Tensor,
+    query_batch: Tensor,
+    ref_batch: Tensor,
+    k: int,
+    block_size: float,
+    chunk_size: int,
+) -> Tensor:
+    N_q = query_coord.shape[0]
+    D   = ref_features.shape[1]
+    device, dtype = query_coord.device, ref_features.dtype
+    output = torch.zeros(N_q, D, device=device, dtype=dtype)
 
-                ref_coord_b = ref_coord[ref_mask_b]
-                ref_feat_b = ref_features[ref_mask_b]
+    batch_ids = query_batch.unique()
 
-                if ref_coord_b.shape[0] == 0:
-                    continue
+    for b in batch_ids:
+        q_mask = query_batch == b
+        r_mask = ref_batch   == b
 
-                for i in range(C):
-                    qb_val = query_batch_chunk[i].item()
-                    if qb_val < 0 or qb_val != b:
-                        continue
+        if not q_mask.any() or not r_mask.any():
+            continue
 
-                    diff = (query_chunk[i] - ref_coord_b).abs()
-                    in_box = diff.max(dim=-1).values < block_size
-
-                    if not in_box.any():
-                        dist_all = ((query_chunk[i] - ref_coord_b) ** 2).sum(dim=-1)
-                        nearest = dist_all.argmin()
-                        output[start + i] = ref_feat_b[nearest]
-                        continue
-
-                    local_features = ref_feat_b[in_box]
-                    local_coords = ref_coord_b[in_box]
-
-                    k_actual = min(k, local_features.shape[0])
-                    dists = ((query_chunk[i] - local_coords) ** 2).sum(dim=-1)
-                    topk_dists, topk_idx = dists.topk(k_actual, largest=False)
-
-                    weights = 1.0 / (topk_dists + 1e-6)
-                    weights = weights / weights.sum()
-
-                    output[start + i] = (
-                        local_features[topk_idx] * weights.unsqueeze(-1)
-                    ).sum(dim=0)
+        out_b = _single_knn(
+            query_coord=query_coord[q_mask],
+            ref_coord=ref_coord[r_mask],
+            ref_features=ref_features[r_mask],
+            k=k,
+            block_size=block_size,
+            chunk_size=chunk_size,
+        )
+        output[q_mask] = out_b
 
     return output

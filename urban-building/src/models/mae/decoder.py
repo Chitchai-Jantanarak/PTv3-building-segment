@@ -61,6 +61,7 @@ class MAEDecoder(nn.Module):
 
         self.color_k = cfg.task.color_decoder.get("k", 8)
         self.color_block_size = cfg.task.color_decoder.get("block_size", 0.05)
+        self.color_chunk_size = cfg.task.color_decoder.get("chunk_size", 2048)
 
         self.mask_token = nn.Parameter(torch.zeros(1, latent_dim))
         nn.init.normal_(self.mask_token, std=0.02)
@@ -123,7 +124,7 @@ class MAEDecoder(nn.Module):
             ref_batch=ref_batch,
             k=self.color_k,
             block_size=self.color_block_size,
-            chunk_size=2048,
+            chunk_size=self.color_chunk_size,
         )
 
         return self.color_head(color_features)

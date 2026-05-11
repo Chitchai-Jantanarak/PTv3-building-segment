@@ -39,13 +39,11 @@ class BlockMasking:
 
             batch_indices = torch.where(batch_mask)[0]
 
-            for blk in masked_blocks:
-                blk_mask = block_ids == blk
-                masked_mask[batch_indices[blk_mask]] = True
+            masked_block_mask = torch.isin(block_ids, masked_blocks)
+            visible_block_mask = torch.isin(block_ids, visible_blocks)
 
-            for blk in visible_blocks:
-                blk_mask = block_ids == blk
-                visible_mask[batch_indices[blk_mask]] = True
+            masked_mask[batch_indices[masked_block_mask]] = True
+            visible_mask[batch_indices[visible_block_mask]] = True
 
         visible_indices = torch.where(visible_mask)[0]
         masked_indices = torch.where(masked_mask)[0]

@@ -127,6 +127,9 @@ class MAEModel(nn.Module):
 
         encoded = self.encoder(visible_feat, visible_coord, visible_batch)
 
+        target_feat = feat[:, self.target_feature_indices]
+        visible_raw_color = target_feat[visible_idx, 4:]
+
         reconstructed_norm = self.decoder(
             encoded=encoded,
             visible_indices=visible_idx,
@@ -134,6 +137,7 @@ class MAEModel(nn.Module):
             n_total=feat.shape[0],
             coord=coord,
             batch=batch,
+            visible_raw_feat=visible_raw_color,
         )
 
         target_feat = feat[:, self.target_feature_indices]

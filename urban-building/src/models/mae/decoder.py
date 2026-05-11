@@ -51,7 +51,7 @@ class MAEDecoder(nn.Module):
         )
 
         self.color_head = nn.Sequential(
-            nn.Linear(latent_dim, hidden_dim),
+            nn.Linear(4, hidden_dim),
             nn.LayerNorm(hidden_dim),
             nn.GELU(),
             nn.Linear(hidden_dim, hidden_dim),
@@ -101,7 +101,9 @@ class MAEDecoder(nn.Module):
         n_query = query_coord.shape[0]
         if ref_features.shape[0] == 0 or n_query == 0:
             return torch.zeros(
-                n_query, 4, device=ref_features.device, dtype=ref_features.dtype
+                n_query, 4, 
+                device=ref_features.device, 
+                dtype=ref_features.dtype
             )
 
         query_coord = torch.nan_to_num(
@@ -137,30 +139,29 @@ class MAEDecoder(nn.Module):
         n_total: int,
         coord: Tensor | None = None,
         batch: Tensor | None = None,
+        visible_raw_feat: Tensor | None = None,
     ) -> Tensor:
         n_msk = masked_indices.shape[0]
 
         coord_norm = self._normalize_coord(coord, batch)
-
         pos_all = self.pos_embed(coord_norm)
         pos_vis = pos_all[visible_indices]
         pos_msk = pos_all[masked_indices]
 
         kv = encoded + pos_vis
-
         q = self.mask_token.expand(n_msk, -1) + pos_msk
 
         if batch is None:
-            kv_seq = kv.unsqueeze(0)
-            q_seq = q.unsqueeze(0)
-
-            attn_out, _ = self.cross_attn(q_seq, kv_seq, kv_seq, need_weights=False)
+            attn_out, _ = self.cross_attn(
+                q.unsqueeze(0), kv.unsqueeze(0), kv.unsqueeze(0),
+                need_weights=False
+            )
             attn_out = attn_out.squeeze(0)
         else:
             attn_out = torch.zeros_like(q)
             vis_batch = batch[visible_indices]
             msk_batch = batch[masked_indices]
-
+            
             batch_max = int(batch.max().item()) + 1
             for b in range(batch_max):
                 vis_mask_b = vis_batch == b
@@ -192,28 +193,26 @@ class MAEDecoder(nn.Module):
 
         vis_coord = coord_norm[visible_indices]
         msk_coord = coord_norm[masked_indices]
-        vis_batch = batch[visible_indices] if batch is not None else None
-        msk_batch = batch[masked_indices] if batch is not None else None
+        vis_batch_ = batch[visible_indices] if batch is not None else None
+        msk_batch_ = batch[masked_indices] if batch is not None else None
+
+        color_ref = visible_raw_feat if visible_raw_feat is not None else encoded
 
         color_msk = self._color_context(
-            ref_features=encoded,
+            ref_features=color_ref,
             ref_coord=vis_coord,
             query_coord=msk_coord,
-            query_batch=msk_batch,
-            ref_batch=vis_batch,
+            query_batch=msk_batch_,
+            ref_batch=vis_batch_,
         )
         reconstructed[masked_indices, 4:] = color_msk.to(encoded.dtype)
 
-        vis_feat = encoded + pos_vis
-        geom_vis = self.geom_head(vis_feat)
-        reconstructed[visible_indices, :4] = geom_vis.to(encoded.dtype)
-
         color_vis = self._color_context(
-            ref_features=encoded,
+            ref_features=color_ref,
             ref_coord=vis_coord,
             query_coord=vis_coord,
-            query_batch=vis_batch,
-            ref_batch=vis_batch,
+            query_batch=vis_batch_,
+            ref_batch=vis_batch_,
         )
         reconstructed[visible_indices, 4:] = color_vis.to(encoded.dtype)
 

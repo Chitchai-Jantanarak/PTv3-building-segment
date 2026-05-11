@@ -76,8 +76,8 @@ def _single_knn(
         weights = 1.0 / (topk_dists + 1e-6)                            # (C, k)
         weights = weights / weights.sum(dim=1, keepdim=True)            # (C, k)
         idx_expanded = topk_idx.unsqueeze(-1).expand(-1, -1, D)         # (C, k, D)
-        neighbor_feats = ref_features.unsqueeze(0).expand(C, -1, -1)    # (C, N_r, D)
-        neighbor_feats = neighbor_feats.gather(1, idx_expanded)          # (C, k, D)
+        flat_idx = topk_idx.reshape(-1)                      # (C*k,)
+        neighbor_feats = ref_features[flat_idx].reshape(C, k_actual, D)  # (C, k, D)
 
         output[start:end] = (neighbor_feats * weights.unsqueeze(-1)).sum(dim=1)
 

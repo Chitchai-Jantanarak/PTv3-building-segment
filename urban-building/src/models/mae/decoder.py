@@ -5,9 +5,6 @@ import torch.nn as nn
 from omegaconf import DictConfig
 from torch import Tensor
 
-from src.tools.knn import block_local_knn
-
-
 class MAEDecoder(nn.Module):
     def __init__(
         self,
@@ -52,17 +49,13 @@ class MAEDecoder(nn.Module):
         )
 
         self.color_head = nn.Sequential(
-            nn.Linear(4, hidden_dim),
+            nn.Linear(latent_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
             nn.GELU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.GELU(),
             nn.Linear(hidden_dim, color_dim),
         )
-
-        self.color_k = cfg.task.color_decoder.get("k", 8)
-        self.color_block_size = cfg.task.color_decoder.get("block_size", 0.05)
-        self.color_chunk_size = cfg.task.color_decoder.get("chunk_size", 2048)
 
         self.mask_token = nn.Parameter(torch.zeros(1, latent_dim))
         nn.init.normal_(self.mask_token, std=0.02)
@@ -91,48 +84,6 @@ class MAEDecoder(nn.Module):
             out[mask] = (sub - c_min) / span
         return out
 
-    def _color_context(
-        self,
-        ref_features: Tensor,
-        ref_coord: Tensor,
-        query_coord: Tensor,
-        query_batch: Tensor | None = None,
-        ref_batch: Tensor | None = None,
-    ) -> Tensor:
-        n_query = query_coord.shape[0]
-        if ref_features.shape[0] == 0 or n_query == 0:
-            return torch.zeros(
-                n_query,
-                self.color_dim,
-                device=ref_features.device,
-                dtype=ref_features.dtype,
-            )
-
-        query_coord = torch.nan_to_num(
-            query_coord, nan=0.0, posinf=1.0, neginf=0.0
-        ).clamp(0.0, 1.0)
-        ref_coord = torch.nan_to_num(
-            ref_coord, nan=0.0, posinf=1.0, neginf=0.0
-        ).clamp(0.0, 1.0)
-
-        if query_batch is not None:
-            query_batch = torch.clamp(query_batch, min=0)
-        if ref_batch is not None:
-            ref_batch = torch.clamp(ref_batch, min=0)
-
-        color_features = block_local_knn(
-            query_coord=query_coord,
-            ref_coord=ref_coord,
-            ref_features=ref_features,
-            query_batch=query_batch,
-            ref_batch=ref_batch,
-            k=self.color_k,
-            block_size=self.color_block_size,
-            chunk_size=self.color_chunk_size,
-        )
-
-        return self.color_head(color_features)
-
     def forward(
         self,
         encoded: Tensor,
@@ -141,7 +92,7 @@ class MAEDecoder(nn.Module):
         n_total: int,
         coord: Tensor | None = None,
         batch: Tensor | None = None,
-        visible_raw_feat: Tensor | None = None,
+        visible_raw_feat: Tensor | None = None, 
     ) -> Tensor:
         n_msk = masked_indices.shape[0]
 
@@ -193,42 +144,11 @@ class MAEDecoder(nn.Module):
         geom_msk = self.geom_head(masked_features)
         reconstructed[masked_indices, :4] = geom_msk.to(encoded.dtype)
 
-        vis_coord = coord_norm[visible_indices]
-        msk_coord = coord_norm[masked_indices]
-        vis_batch_ = batch[visible_indices] if batch is not None else None
-        msk_batch_ = batch[masked_indices] if batch is not None else None
+        color_msk_pred = self.color_head(masked_features)
+        reconstructed[masked_indices, 4:] = color_msk_pred.to(encoded.dtype)
 
-        if visible_raw_feat is None:
-            raise ValueError(
-                "visible_raw_feat is required because color_head expects "
-                "raw 4-dim [r, g, b, intensity] features."
-            )
-
-        if visible_raw_feat.shape[1] != 4:
-            raise ValueError(
-                f"visible_raw_feat must have shape (N_visible, 4), "
-                f"got {tuple(visible_raw_feat.shape)}"
-            )
-
-        color_ref = visible_raw_feat.to(device=encoded.device, dtype=encoded.dtype)
-
-        color_msk = self._color_context(
-            ref_features=color_ref,
-            ref_coord=vis_coord,
-            query_coord=msk_coord,
-            query_batch=msk_batch_,
-            ref_batch=vis_batch_,
-        )
-        reconstructed[masked_indices, 4:] = color_msk.to(encoded.dtype)
-
-        color_vis = self._color_context(
-            ref_features=color_ref,
-            ref_coord=vis_coord,
-            query_coord=vis_coord,
-            query_batch=vis_batch_,
-            ref_batch=vis_batch_,
-        )
-        reconstructed[visible_indices, 4:] = color_vis.to(encoded.dtype)
+        color_vis_pred = self.color_head(encoded)
+        reconstructed[visible_indices, 4:] = color_vis_pred.to(encoded.dtype)
 
         return reconstructed
 

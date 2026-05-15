@@ -11,5 +11,5 @@ grid_size: 0.04
 latent_dim: 512
 
 color_head:
-  enabled: false
+  enabled: true
   rgb_channels: 3

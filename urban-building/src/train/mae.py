@@ -4,9 +4,9 @@ from datetime import datetime
 from pathlib import Path
 
 import torch
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
-from src.core.utils import get_logger, set_seed
+from src.core.utils import as_plain_dict, get_logger, set_seed
 from src.core.utils.checkpoint import load_ckpt
 from src.datasets import build_dataloader
 from src.models.mae import MAEForPretraining
@@ -147,9 +147,7 @@ def calibrate_mae(cfg: DictConfig) -> None:
         raise RuntimeError("Calibration produced 0 steps -- check dataloader")
 
     mean_loss = (accum / count).cpu().tolist()
-    multipliers = OmegaConf.to_container(
-        cfg.task.loss.get("priority_multipliers", {}) or {}, resolve=True
-    ) or {}
+    multipliers = as_plain_dict(cfg.task.loss.get("priority_multipliers", None))
 
     # Inverse-loss weights, normalised so mean weight = 1.0 (no global scale shift),
     eps = 1e-6

@@ -1,10 +1,13 @@
 # src/models/mae/model.py
 
+from pathlib import Path
+
 import torch
 import torch.nn as nn
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from torch import Tensor
 
+from src.core.utils import get_logger
 from src.losses import masked_mse_loss
 from src.models.mae.decoder import MAEDecoder
 from src.models.mae.encoder import MAEEncoder
@@ -14,6 +17,8 @@ from src.models.mae_features import (
     resolve_input_feature_names,
     resolve_target_feature_names,
 )
+
+AUTO_WEIGHTS_PATH = Path("configs/task/_auto/mae_feature_weights.yaml")
 
 
 class MAEModel(nn.Module):
@@ -61,11 +66,83 @@ class MAEModel(nn.Module):
         )
 
     def _build_loss_weights(self) -> torch.Tensor:
-        weights = torch.ones(len(self.target_feature_names))
-        for i, name in enumerate(self.target_feature_names):
-            if name in ("z", "rel_z"):
-                weights[i] = 3.0 # x3
+        feature_names = self.target_feature_names
+        loss_cfg = self.cfg.task.get("loss", {})
+
+        manual = OmegaConf.to_container(
+            loss_cfg.get("feature_weights", {}) or {}, resolve=True
+        )
+        if isinstance(manual, dict) and len(manual) > 0:
+            return self._log_and_build_weights(
+                manual, feature_names, source=f"manual override ({self._cfg_loss_path()})"
+            )
+
+        if AUTO_WEIGHTS_PATH.exists():
+            try:
+                auto_cfg = OmegaConf.load(AUTO_WEIGHTS_PATH)
+            except Exception as exc:
+                get_logger("MAE").warning(
+                    f"[loss-weights] failed to parse {AUTO_WEIGHTS_PATH}: {exc}; falling back"
+                )
+            else:
+                auto = OmegaConf.to_container(
+                    auto_cfg.get("feature_weights", {}) or {}, resolve=True
+                )
+                if isinstance(auto, dict) and len(auto) > 0:
+                    return self._log_and_build_weights(
+                        auto, feature_names, source=f"auto-calibration ({AUTO_WEIGHTS_PATH})"
+                    )
+
+        return self._log_and_build_weights(
+            {}, feature_names, source="default (all 1.0)"
+        )
+
+    @staticmethod
+    def _cfg_loss_path() -> str:
+        return "configs/task/mae.yaml :: loss.feature_weights"
+
+    @staticmethod
+    def _log_and_build_weights(
+        mapping: dict,
+        feature_names: list[str],
+        source: str,
+    ) -> torch.Tensor:
+        weights = torch.tensor(
+            [float(mapping.get(name, 1.0)) for name in feature_names],
+            dtype=torch.float32,
+        )
+        logger = get_logger("MAE")
+        pretty = ", ".join(
+            f"{n}={w:.3f}" for n, w in zip(feature_names, weights.tolist())
+        )
+        logger.info(f"[loss-weights] source: {source}")
+        logger.info(f"[loss-weights] values: {pretty}")
+        missing = [n for n in feature_names if n not in mapping] if mapping else []
+        if mapping and missing:
+            logger.warning(
+                f"[loss-weights] no entry for {missing} -- defaulted to 1.0"
+            )
         return weights
+
+    def per_feature_loss(
+        self,
+        output: dict[str, Tensor],
+        target: Tensor,
+    ) -> Tensor:
+        """Per-feature unweighted MSE on masked points. Used by calibration."""
+        reconstructed_norm = output["reconstructed_norm"]
+        masked_idx = output["masked_indices"]
+        mean = output["target_mean"]
+        std = output["target_std"]
+        valid = output["target_valid"]
+
+        target_norm = (target - mean) / std
+        diff = (reconstructed_norm - target_norm) ** 2
+        diff = diff * valid.to(diff.dtype)
+
+        numer = diff[masked_idx].sum(dim=0)
+        denom = valid[masked_idx].to(diff.dtype).sum(dim=0).clamp(min=1.0)
+        return numer / denom
 
     @staticmethod
     def _per_sample_stats(

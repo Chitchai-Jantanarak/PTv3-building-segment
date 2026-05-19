@@ -11,6 +11,14 @@ masking:
 loss:
   type: mse
   target: all
+  feature_weights: {}
+  priority_multipliers:
+    r: 1.5
+    g: 1.5
+    b: 1.5
+    intensity: 1.5
+  calibrate: true
+  calibration_steps: 200
 
 features:
   xyz: true

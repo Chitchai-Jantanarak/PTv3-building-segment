@@ -126,38 +126,73 @@ def calibrate_mae(cfg: DictConfig) -> None:
     count = 0
     target_steps = int(cfg.task.loss.get("calibration_steps", 200))
 
+    max_passes = max(1, target_steps)  # hard guard against infinite loops
+    pass_idx = 0
     with torch.no_grad():
-        for batch_idx, batch in enumerate(train_loader):
-            if count >= target_steps:
+        while count < target_steps and pass_idx < max_passes:
+            pass_idx += 1
+            consumed_this_pass = 0
+            for batch in train_loader:
+                if count >= target_steps:
+                    break
+                feat = batch["points"].to(device)
+                coord = batch["coords"].to(device)
+                batch_t = batch["batch"].to(device)
+
+                target = model.build_target(feat)
+                output = model.forward(feat, coord, batch_t)
+                per_feat = model.per_feature_loss(output, target).double()
+                accum += per_feat
+                count += 1
+                consumed_this_pass += 1
+
+                if count % 25 == 0 or count == target_steps:
+                    logger.info(f"Calibration step {count}/{target_steps}")
+
+            if consumed_this_pass == 0:
                 break
-            feat = batch["points"].to(device)
-            coord = batch["coords"].to(device)
-            batch_t = batch["batch"].to(device)
-
-            target = model.build_target(feat)
-            output = model.forward(feat, coord, batch_t)
-            per_feat = model.per_feature_loss(output, target).double()
-            accum += per_feat
-            count += 1
-
-            if batch_idx % 25 == 0:
-                logger.info(f"Calibration step {count}/{target_steps}")
 
     if count == 0:
         raise RuntimeError("Calibration produced 0 steps -- check dataloader")
 
+    logger.info(f"Calibration finished: {count} steps over {pass_idx} loader pass(es)")
+
     mean_loss = (accum / count).cpu().tolist()
     multipliers = as_plain_dict(cfg.task.loss.get("priority_multipliers", None))
 
-    # Inverse-loss weights, normalised so mean weight = 1.0 (no global scale shift),
-    eps = 1e-6
-    raw = [1.0 / max(loss, eps) for loss in mean_loss]
-    raw_mean = sum(raw) / len(raw)
-    normalised = [r / raw_mean for r in raw]
+    MIN_MEANINGFUL_LOSS = 1e-3
+
+    inv_raw: list[float | None] = []
+    flagged: list[str] = []
+    for i, loss in enumerate(mean_loss):
+        if loss < MIN_MEANINGFUL_LOSS:
+            inv_raw.append(None)
+            flagged.append(feature_names[i])
+        else:
+            inv_raw.append(1.0 / loss)
+
+    valid_inv = [r for r in inv_raw if r is not None]
+    if not valid_inv:
+        raise RuntimeError(
+            "All features fell below MIN_MEANINGFUL_LOSS during calibration -- "
+            "check per-sample normalization and the masking ratio"
+        )
+    inv_mean = sum(valid_inv) / len(valid_inv)
+    normalised = [
+        (r / inv_mean) if r is not None else 1.0
+        for r in inv_raw
+    ]
     final = {
         name: round(normalised[i] * float(multipliers.get(name, 1.0)), 4)
         for i, name in enumerate(feature_names)
     }
+
+    if flagged:
+        logger.warning(
+            f"[calibration] features {flagged} had mean loss < {MIN_MEANINGFUL_LOSS} "
+            "(likely a normalization / valid-mask bug) -- assigned neutral weight 1.0. "
+            "Fix the underlying normalization before trusting these weights."
+        )
 
     try:
         git_sha = subprocess.check_output(
@@ -178,7 +213,12 @@ def calibrate_mae(cfg: DictConfig) -> None:
         "# per-feature unweighted mean MSE (normalized target space):",
     ]
     for name, loss in zip(feature_names, mean_loss):
-        header_lines.append(f"#   {name:10s} {loss:.6f}")
+        marker = "  <- FLAGGED (loss too low, neutral weight 1.0)" if name in flagged else ""
+        header_lines.append(f"#   {name:10s} {loss:.6f}{marker}")
+    if flagged:
+        header_lines.append(
+            f"# flagged features: {flagged} -- fix normalization before trusting their weights"
+        )
     header_lines.append(
         "# DO NOT hand-edit -- to override, set loss.feature_weights in mae.yaml"
     )

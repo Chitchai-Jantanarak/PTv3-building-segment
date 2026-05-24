@@ -39,6 +39,15 @@ class MAEDecoder(nn.Module):
         )
         self.attn_norm = nn.LayerNorm(latent_dim)
 
+        self.color_in = nn.Linear(color_dim, latent_dim)
+        self.color_cross_attn = nn.MultiheadAttention(
+            embed_dim=latent_dim,
+            num_heads=n_heads,
+            batch_first=True,
+            dropout=0.0,
+        )
+        self.color_norm = nn.LayerNorm(latent_dim)
+
         self.geom_head = nn.Sequential(
             nn.Linear(latent_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
@@ -84,6 +93,38 @@ class MAEDecoder(nn.Module):
             out[mask] = (sub - c_min) / span
         return out
 
+    def _cross_attend(
+        self,
+        attn: nn.MultiheadAttention,
+        q: Tensor,
+        k: Tensor,
+        v: Tensor,
+        visible_indices: Tensor,
+        masked_indices: Tensor,
+        batch: Tensor | None,
+    ) -> Tensor:
+        if batch is None:
+            out, _ = attn(
+                q.unsqueeze(0), k.unsqueeze(0), v.unsqueeze(0), need_weights=False
+            )
+            return out.squeeze(0)
+
+        out = torch.zeros_like(q)
+        vis_batch = batch[visible_indices]
+        msk_batch = batch[masked_indices]
+        batch_max = int(batch.max().item()) + 1
+        for b in range(batch_max):
+            vis_mask_b = vis_batch == b
+            msk_mask_b = msk_batch == b
+            if not msk_mask_b.any() or not vis_mask_b.any():
+                continue  # leave zeros for masked points with no visible context
+            q_b = q[msk_mask_b].unsqueeze(0)
+            k_b = k[vis_mask_b].unsqueeze(0)
+            v_b = v[vis_mask_b].unsqueeze(0)
+            out_b, _ = attn(q_b, k_b, v_b, need_weights=False)
+            out[msk_mask_b] = out_b.squeeze(0).to(out.dtype)
+        return out
+
     def forward(
         self,
         encoded: Tensor,
@@ -92,7 +133,7 @@ class MAEDecoder(nn.Module):
         n_total: int,
         coord: Tensor | None = None,
         batch: Tensor | None = None,
-        visible_raw_feat: Tensor | None = None, 
+        visible_raw_feat: Tensor | None = None,
     ) -> Tensor:
         n_msk = masked_indices.shape[0]
 
@@ -101,54 +142,41 @@ class MAEDecoder(nn.Module):
         pos_vis = pos_all[visible_indices]
         pos_msk = pos_all[masked_indices]
 
-        kv = encoded + pos_vis
         q = self.mask_token.expand(n_msk, -1) + pos_msk
 
-        if batch is None:
-            attn_out, _ = self.cross_attn(
-                q.unsqueeze(0), kv.unsqueeze(0), kv.unsqueeze(0),
-                need_weights=False
-            )
-            attn_out = attn_out.squeeze(0)
+        # --- Geometry path: keys = values = encoded features + position ---
+        kv_geom = encoded + pos_vis
+        geom_attn = self._cross_attend(
+            self.cross_attn, q, kv_geom, kv_geom,
+            visible_indices, masked_indices, batch,
+        )
+        geom_features = self.attn_norm(q + geom_attn)
+
+        # --- Color path: scores on geometry/position, values carry color ---
+        # The query asks "which visible points are relevant to me?" (via keys)
+        # and retrieves "a learned blend of their colors" (via values). This is
+        # the path the old decoder lacked -- color was never in the values.
+        if visible_raw_feat is not None:
+            color_values = self.color_in(visible_raw_feat) + pos_vis
         else:
-            attn_out = torch.zeros_like(q)
-            vis_batch = batch[visible_indices]
-            msk_batch = batch[masked_indices]
-            
-            batch_max = int(batch.max().item()) + 1
-            for b in range(batch_max):
-                vis_mask_b = vis_batch == b
-                msk_mask_b = msk_batch == b
-
-                if not msk_mask_b.any():
-                    continue
-
-                q_b = q[msk_mask_b].unsqueeze(0)
-
-                if not vis_mask_b.any():
-                    attn_out[msk_mask_b] = torch.zeros_like(
-                        q_b.squeeze(0), dtype=attn_out.dtype
-                    )
-                    continue
-
-                kv_b = kv[vis_mask_b].unsqueeze(0)
-                out_b, _ = self.cross_attn(q_b, kv_b, kv_b, need_weights=False)
-                attn_out[msk_mask_b] = out_b.squeeze(0).to(attn_out.dtype)
-
-        masked_features = self.attn_norm(q + attn_out)
+            # Encode-only / no raw color available: fall back to encoded values.
+            color_values = kv_geom
+        color_keys = encoded + pos_vis
+        color_attn = self._cross_attend(
+            self.color_cross_attn, q, color_keys, color_values,
+            visible_indices, masked_indices, batch,
+        )
+        color_features = self.color_norm(q + color_attn)
 
         reconstructed = torch.zeros(
             n_total, 8, device=encoded.device, dtype=encoded.dtype
         )
 
-        geom_msk = self.geom_head(masked_features)
+        geom_msk = self.geom_head(geom_features)
         reconstructed[masked_indices, :4] = geom_msk.to(encoded.dtype)
 
-        color_msk_pred = self.color_head(masked_features)
+        color_msk_pred = self.color_head(color_features)
         reconstructed[masked_indices, 4:] = color_msk_pred.to(encoded.dtype)
-
-        color_vis_pred = self.color_head(encoded)
-        reconstructed[visible_indices, 4:] = color_vis_pred.to(encoded.dtype)
 
         return reconstructed
 

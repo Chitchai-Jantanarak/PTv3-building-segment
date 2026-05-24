@@ -45,7 +45,7 @@ def train_mae(cfg: DictConfig) -> None:
             path=best_ckpt,
             model=model,
             optimizer=None,
-            strict=True,
+            strict=False,
             device=cfg.run.device,
         )
     else:

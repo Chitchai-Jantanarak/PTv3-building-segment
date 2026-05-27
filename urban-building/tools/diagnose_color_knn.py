@@ -39,7 +39,7 @@ def knn_color_predict(
     kk = min(k, coord_vis.shape[0])
     out = []
     for i in range(0, coord_msk.shape[0], chunk):
-        d = torch.cdist(coord_msk[i : i + chunk], coord_vis)  # [m, n_vis]
+        d = torch.cdist(coord_msk[i : i + chunk], coord_vis)   # [m, n_vis]
         idx = d.topk(kk, dim=1, largest=False).indices         # [m, kk]
         out.append(color_vis[idx].mean(dim=1))                 # [m, C]
     return torch.cat(out, dim=0)

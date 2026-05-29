@@ -1,23 +1,31 @@
 name: mae
 stage: 0
 model: mae
-freeze_encoder: true
+freeze_encoder: false
 
 masking:
   type: block
-  ratio: 0.65
-  block_size: 32
+  ratio: 0.5
+  block_size: 8
 
 loss:
   type: mse
   target: all
-  feature_weights: {}
+  feature_weights:
+    x: 1.0
+    y: 1.0
+    z: 1.0
+    rel_z: 1.0
+    r: 2.0
+    g: 2.0
+    b: 2.0
+    intensity: 1.0
   priority_multipliers:
     r: 1.5
     g: 1.5
     b: 1.5
     intensity: 1.5
-  calibrate: true
+  calibrate: false
   calibration_steps: 200
 
 features:
@@ -30,6 +38,10 @@ color_decoder:
   k: 8
   block_size: 0.05
   chunk_size: 8192
+
+intensity_norm:
+  mean: 0.5
+  std: 0.5
 
 n_heads: 8
 

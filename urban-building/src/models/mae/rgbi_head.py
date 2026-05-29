@@ -13,6 +13,7 @@ class RGBIHead(nn.Module):
         super().__init__()
         self.rgbi_dim = rgbi_dim
         dec_cfg = cfg.task.get("color_decoder", {})
+        self.enabled = bool(dec_cfg.get("enabled", True))
         self.k = int(dec_cfg.get("k", 8))
         self.block_size = float(dec_cfg.get("block_size", 0.05))
         self.chunk_size = int(dec_cfg.get("chunk_size", 8192))
@@ -53,6 +54,11 @@ class RGBIHead(nn.Module):
         device = encoded.device
         if n_masked == 0:
             return torch.zeros(0, self.rgbi_dim, device=device, dtype=encoded.dtype)
+
+        if not self.enabled or visible_indices.numel() == 0:
+            hidden = self.out.in_features
+            zeros = torch.zeros(n_masked, hidden, device=device, dtype=self.out.weight.dtype)
+            return self.out(zeros).to(encoded.dtype)
 
         coord_norm = self._normalize_coord(coord.float(), batch)
         q_coord = coord_norm[masked_indices]

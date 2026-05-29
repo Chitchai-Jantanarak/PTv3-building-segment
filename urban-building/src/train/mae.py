@@ -59,6 +59,29 @@ def train_mae(cfg: DictConfig) -> None:
     train_loader = build_dataloader(cfg, split="train")
     val_loader = build_dataloader(cfg, split="val")
 
+    if "intensity" in model.rgbi_names:
+        intensity_pos = model.target_feature_names.index("intensity")
+        total = 0.0
+        total_sq = 0.0
+        count = 0
+        with torch.no_grad():
+            for batch in train_loader:
+                feat = batch["points"]
+                col = feat[:, model.target_feature_indices][:, intensity_pos]
+                total += float(col.sum())
+                total_sq += float((col * col).sum())
+                count += col.numel()
+        if count > 0:
+            mean = total / count
+            var = max(total_sq / count - mean * mean, 0.0)
+            model.set_intensity_norm(mean, var ** 0.5)
+            logger.info(f"[norm] intensity mean={mean:.6f} std={var ** 0.5:.6f}")
+        else:
+            inorm = cfg.task.get("intensity_norm", {})
+            model.set_intensity_norm(
+                float(inorm.get("mean", 0.5)), float(inorm.get("std", 0.5))
+            )
+
     optimizer = build_optimizer(cfg, model)
     scheduler = build_scheduler(cfg, optimizer)
 

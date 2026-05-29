@@ -16,9 +16,7 @@ class MAEDecoder(nn.Module):
         super().__init__()
 
         hidden_dim = latent_dim // 2
-        geom_dim = 4
-        color_dim = 4
-        self.color_dim = color_dim
+        self.geom_dim = output_dim
 
         self.register_buffer("coord_scale", torch.tensor(1.0))
 
@@ -39,31 +37,13 @@ class MAEDecoder(nn.Module):
         )
         self.attn_norm = nn.LayerNorm(latent_dim)
 
-        self.color_in = nn.Linear(color_dim, latent_dim)
-        self.color_cross_attn = nn.MultiheadAttention(
-            embed_dim=latent_dim,
-            num_heads=n_heads,
-            batch_first=True,
-            dropout=0.0,
-        )
-        self.color_norm = nn.LayerNorm(latent_dim)
-
         self.geom_head = nn.Sequential(
             nn.Linear(latent_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
             nn.GELU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.GELU(),
-            nn.Linear(hidden_dim, geom_dim),
-        )
-
-        self.color_head = nn.Sequential(
-            nn.Linear(latent_dim, hidden_dim),
-            nn.LayerNorm(hidden_dim),
-            nn.GELU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.GELU(),
-            nn.Linear(hidden_dim, color_dim),
+            nn.Linear(hidden_dim, output_dim),
         )
 
         self.mask_token = nn.Parameter(torch.zeros(1, latent_dim))
@@ -130,10 +110,8 @@ class MAEDecoder(nn.Module):
         encoded: Tensor,
         visible_indices: Tensor,
         masked_indices: Tensor,
-        n_total: int,
         coord: Tensor | None = None,
         batch: Tensor | None = None,
-        visible_raw_feat: Tensor | None = None,
     ) -> Tensor:
         n_msk = masked_indices.shape[0]
 
@@ -144,7 +122,6 @@ class MAEDecoder(nn.Module):
 
         q = self.mask_token.expand(n_msk, -1) + pos_msk
 
-        # --- Geometry path: keys = values = encoded features + position ---
         kv_geom = encoded + pos_vis
         geom_attn = self._cross_attend(
             self.cross_attn, q, kv_geom, kv_geom,
@@ -152,33 +129,7 @@ class MAEDecoder(nn.Module):
         )
         geom_features = self.attn_norm(q + geom_attn)
 
-        # --- Color path: scores on geometry/position, values carry color ---
-        # The query asks "which visible points are relevant to me?" (via keys)
-        # and retrieves "a learned blend of their colors" (via values). This is
-        # the path the old decoder lacked -- color was never in the values.
-        if visible_raw_feat is not None:
-            color_values = self.color_in(visible_raw_feat) + pos_vis
-        else:
-            # Encode-only / no raw color available: fall back to encoded values.
-            color_values = kv_geom
-        color_keys = encoded + pos_vis
-        color_attn = self._cross_attend(
-            self.color_cross_attn, q, color_keys, color_values,
-            visible_indices, masked_indices, batch,
-        )
-        color_features = self.color_norm(q + color_attn)
-
-        reconstructed = torch.zeros(
-            n_total, 8, device=encoded.device, dtype=encoded.dtype
-        )
-
-        geom_msk = self.geom_head(geom_features)
-        reconstructed[masked_indices, :4] = geom_msk.to(encoded.dtype)
-
-        color_msk_pred = self.color_head(color_features)
-        reconstructed[masked_indices, 4:] = color_msk_pred.to(encoded.dtype)
-
-        return reconstructed
+        return self.geom_head(geom_features)
 
 
 class TransformerDecoder(nn.Module):

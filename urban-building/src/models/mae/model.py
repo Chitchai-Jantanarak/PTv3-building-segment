@@ -12,6 +12,7 @@ from src.losses import masked_mse_loss
 from src.models.mae.decoder import MAEDecoder
 from src.models.mae.encoder import MAEEncoder
 from src.models.mae.masking import BlockMasking
+from src.models.mae.rgbi_head import RGBIHead
 from src.models.mae_features import (
     get_feature_indices,
     resolve_input_feature_names,
@@ -35,6 +36,32 @@ class MAEModel(nn.Module):
             self.target_feature_names,
         )
 
+        geom_set = {"x", "y", "z", "rel_z"}
+        rgbi_set = {"r", "g", "b", "intensity"}
+        self.geom_pos = [
+            i for i, n in enumerate(self.target_feature_names) if n in geom_set
+        ]
+        self.rgbi_pos = [
+            i for i, n in enumerate(self.target_feature_names) if n in rgbi_set
+        ]
+        self.rgbi_names = [self.target_feature_names[i] for i in self.rgbi_pos]
+        self.rgbi_dim = len(self.rgbi_pos)
+
+        default_mean = []
+        default_std = []
+        for n in self.rgbi_names:
+            if n in {"r", "g", "b"}:
+                default_mean.append(0.5)
+                default_std.append(0.2)
+            else:
+                default_mean.append(0.5)
+                default_std.append(0.5)
+        self.register_buffer(
+            "rgbi_pos_tensor", torch.tensor(self.rgbi_pos, dtype=torch.long)
+        )
+        self.register_buffer("rgbi_mean", torch.tensor(default_mean, dtype=torch.float32))
+        self.register_buffer("rgbi_std", torch.tensor(default_std, dtype=torch.float32))
+
         self.encoder = MAEEncoder(cfg)
 
         encoder_input_dim = int(cfg.model.in_channels)
@@ -52,7 +79,12 @@ class MAEModel(nn.Module):
         self.decoder = MAEDecoder(
             cfg=cfg,
             latent_dim=self.encoder.latent_dim,
-            output_dim=len(self.target_feature_names),
+            output_dim=len(self.geom_pos),
+        )
+        self.rgbi_head = RGBIHead(
+            cfg=cfg,
+            latent_dim=self.encoder.latent_dim,
+            rgbi_dim=self.rgbi_dim,
         )
 
         self.masking = BlockMasking(
@@ -169,6 +201,26 @@ class MAEModel(nn.Module):
         valid = valid_b[batch]
         return mean, std, valid
 
+    def set_intensity_norm(self, mean: float, std: float) -> None:
+        if "intensity" not in self.rgbi_names:
+            return
+        i = self.rgbi_names.index("intensity")
+        self.rgbi_mean[i] = float(mean)
+        self.rgbi_std[i] = max(float(std), 1e-2)
+
+    def _feature_stats(
+        self,
+        target_feat: Tensor,
+        batch: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        mean, std, valid = self._per_sample_stats(target_feat, batch)
+        if self.rgbi_pos:
+            pos = self.rgbi_pos_tensor
+            mean[:, pos] = self.rgbi_mean.to(mean.dtype)
+            std[:, pos] = self.rgbi_std.to(std.dtype)
+            valid[:, pos] = True
+        return mean, std, valid
+
 
     def forward(
         self,
@@ -200,20 +252,44 @@ class MAEModel(nn.Module):
         encoded = self.encoder(visible_feat, visible_coord, visible_batch)
 
         target_feat = feat[:, self.target_feature_indices]
-        visible_raw_color = target_feat[visible_idx, 4:]
+        visible_raw_rgbi = target_feat[visible_idx][:, self.rgbi_pos_tensor]
 
-        reconstructed_norm = self.decoder(
+        geom_norm = self.decoder(
             encoded=encoded,
             visible_indices=visible_idx,
             masked_indices=masked_idx,
-            n_total=feat.shape[0],
             coord=coord,
             batch=batch,
-            visible_raw_feat=visible_raw_color,
+        )
+        rgbi_raw = self.rgbi_head(
+            encoded=encoded,
+            visible_indices=visible_idx,
+            masked_indices=masked_idx,
+            coord=coord,
+            batch=batch,
+            visible_raw_rgbi=visible_raw_rgbi,
         )
 
-        target_feat = feat[:, self.target_feature_indices]
-        mean, std, valid = self._per_sample_stats(target_feat, batch)
+        mean, std, valid = self._feature_stats(target_feat, batch)
+
+        n_total = feat.shape[0]
+        n_target = len(self.target_feature_names)
+        reconstructed_norm = torch.zeros(
+            n_total, n_target, device=encoded.device, dtype=encoded.dtype
+        )
+
+        stitched = torch.zeros(
+            masked_idx.shape[0], n_target, device=encoded.device, dtype=encoded.dtype
+        )
+        geom_pos = torch.tensor(self.geom_pos, device=encoded.device, dtype=torch.long)
+        rgbi_pos = self.rgbi_pos_tensor.to(encoded.device)
+        stitched[:, geom_pos] = geom_norm.to(stitched.dtype)
+        rgbi_norm = (rgbi_raw - self.rgbi_mean.to(rgbi_raw.dtype)) / self.rgbi_std.to(
+            rgbi_raw.dtype
+        )
+        stitched[:, rgbi_pos] = rgbi_norm.to(stitched.dtype)
+        reconstructed_norm[masked_idx] = stitched
+
         reconstructed = reconstructed_norm * std + mean
 
         return {

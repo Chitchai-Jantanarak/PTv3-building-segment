@@ -119,3 +119,70 @@ def _batched_knn(
         output[q_mask] = out_b
 
     return output
+
+
+def _knn_idx_single(
+    query_coord: Tensor,
+    ref_coord: Tensor,
+    k: int,
+    block_size: float,
+    chunk_size: int,
+) -> tuple[Tensor, Tensor]:
+    N_q = query_coord.shape[0]
+    device = query_coord.device
+    n_ref = ref_coord.shape[0]
+    kk = min(k, n_ref)
+    idx_out = torch.zeros(N_q, kk, dtype=torch.long, device=device)
+    dist_out = torch.full((N_q, kk), float("inf"), device=device)
+
+    for start in range(0, N_q, chunk_size):
+        end = min(start + chunk_size, N_q)
+        q = query_coord[start:end]
+        diff = (q.unsqueeze(1) - ref_coord.unsqueeze(0)).abs()
+        in_box = diff.amax(dim=-1) < block_size
+        l2 = (q.unsqueeze(1) - ref_coord.unsqueeze(0)).pow(2).sum(-1)
+        l2m = l2.masked_fill(~in_box, float("inf"))
+        all_inf = (~in_box).all(dim=-1)
+        if all_inf.any():
+            l2m[all_inf] = l2[all_inf]
+        td, ti = l2m.topk(kk, dim=1, largest=False)
+        idx_out[start:end] = ti
+        dist_out[start:end] = td
+
+    return idx_out, dist_out
+
+
+def knn_neighbors(
+    query_coord: Tensor,
+    ref_coord: Tensor,
+    query_batch: Tensor,
+    ref_batch: Tensor,
+    k: int,
+    block_size: float,
+    chunk_size: int = 8192,
+) -> tuple[Tensor, Tensor]:
+    N_q = query_coord.shape[0]
+    device = query_coord.device
+    idx_out = torch.zeros(N_q, k, dtype=torch.long, device=device)
+    dist_out = torch.full((N_q, k), float("inf"), device=device)
+
+    if N_q == 0 or ref_coord.shape[0] == 0:
+        return idx_out, dist_out
+
+    for b in query_batch.unique():
+        q_mask = query_batch == b
+        r_mask = ref_batch == b
+        if not q_mask.any() or not r_mask.any():
+            continue
+        ref_global = torch.where(r_mask)[0]
+        li, ld = _knn_idx_single(
+            query_coord[q_mask], ref_coord[r_mask], k, block_size, chunk_size
+        )
+        kk = li.shape[1]
+        gi = ref_global[li]
+        idx_out[q_mask, :kk] = gi
+        dist_out[q_mask, :kk] = ld
+        if kk < k:
+            idx_out[q_mask, kk:] = gi[:, :1]
+
+    return idx_out, dist_out

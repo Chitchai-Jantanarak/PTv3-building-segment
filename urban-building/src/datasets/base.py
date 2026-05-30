@@ -229,6 +229,15 @@ class BasePointCloudDataset(Dataset, ABC):
         n_xyz = min(3, features.shape[1], centroid.shape[0])
         features[:, :n_xyz] -= centroid[:n_xyz]
 
+        if not np.isfinite(features).all():
+            bad = ~np.isfinite(features)
+            cols = np.where(bad.any(axis=0))[0].tolist()
+            logger.warning(
+                f"non-finite features in {data.get('file_path', '?')} "
+                f"cols={cols} count={int(bad.sum())} -- replacing with 0"
+            )
+            features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
+
         result["points"] = torch.from_numpy(features).float()
         result["coords"] = torch.from_numpy(coords_centered).float()
 
@@ -239,7 +248,10 @@ class BasePointCloudDataset(Dataset, ABC):
             result["instance"] = torch.from_numpy(data["instance"]).long()
 
         if "rgb" in data:
-            result["rgb"] = torch.from_numpy(data["rgb"]).float()
+            rgb = data["rgb"]
+            if not np.isfinite(rgb).all():
+                rgb = np.nan_to_num(rgb, nan=0.0, posinf=0.0, neginf=0.0)
+            result["rgb"] = torch.from_numpy(rgb).float()
 
         for key in ["file_path", "feature_names"]:
             if key in data:

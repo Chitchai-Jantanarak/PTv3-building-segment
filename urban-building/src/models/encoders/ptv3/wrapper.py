@@ -3,6 +3,7 @@ import os
 import sys
 from pathlib import Path
 
+import torch
 import torch.nn as nn
 from omegaconf import DictConfig
 from torch import Tensor

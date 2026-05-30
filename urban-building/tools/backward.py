@@ -1,4 +1,5 @@
 import os
+import sys
 
 os.environ.setdefault("SPCONV_ALGO", "native")
 
@@ -24,19 +25,26 @@ def run(algo_name, algo, strided):
     else:
         conv = spconv_pt.SubMConv3d(16, 32, 3, bias=False, algo=algo).to(device)
 
-    try:
-        out = conv(x)
-        loss = out.features.sum()
-        loss.backward()
-        torch.cuda.synchronize()
-        print(f"[OK] {algo_name} strided={strided}: grad_norm={feat.grad.norm().item():.4f}")
-    except Exception as e:
-        print(f"[FAIL] {algo_name} strided={strided}: {type(e).__name__}: {e}")
+    out = conv(x)
+    loss = out.features.sum()
+    loss.backward()
+    torch.cuda.synchronize()
+    print(f"[OK] {algo_name} strided={strided}: grad_norm={feat.grad.norm().item():.4f}", flush=True)
 
 
 if __name__ == "__main__":
     print("torch", torch.__version__, "cap", torch.cuda.get_device_capability())
     print("spconv", spconv.__version__, spconv.__file__)
-    for strided in (False, True):
-        run("Native", ConvAlgo.Native, strided)
-        run("MaskImplicitGemm", ConvAlgo.MaskImplicitGemm, strided)
+    which = sys.argv[1] if len(sys.argv) > 1 else "all"
+    cases = {
+        "subm_native": ("Native", ConvAlgo.Native, False),
+        "subm_gemm": ("MaskImplicitGemm", ConvAlgo.MaskImplicitGemm, False),
+        "strided_native": ("Native", ConvAlgo.Native, True),
+        "strided_gemm": ("MaskImplicitGemm", ConvAlgo.MaskImplicitGemm, True),
+    }
+    if which == "all":
+        for name, (a, alg, st) in cases.items():
+            run(a, alg, st)
+    else:
+        a, alg, st = cases[which]
+        run(a, alg, st)

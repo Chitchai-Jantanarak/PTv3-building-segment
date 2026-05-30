@@ -1,4 +1,5 @@
 # src/models/encoders/ptv3/wrapper.py
+import os
 import sys
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from src.models.encoders.ptv3.point import (  # noqa: E402
 
 
 def _force_native_algo(model: nn.Module) -> None:
+    if os.environ.get("PTV3_NATIVE_ALGO", "1") == "0":
+        return
     try:
         from spconv.core import ConvAlgo
 
@@ -66,6 +69,9 @@ class PTv3Encoder(nn.Module):
         batch: Tensor | None = None,
         offset: Tensor | None = None,
     ) -> Tensor:
+        if os.environ.get("PTV3_DEBUG", "0") == "1":
+            self._debug_coords(feat, coord, batch)
+
         point = build_point_dict(
             feat=feat,
             coord=coord,
@@ -77,6 +83,21 @@ class PTv3Encoder(nn.Module):
         point = self.net(point)
 
         return extract_features(point)
+
+    @staticmethod
+    def _debug_coords(feat: Tensor, coord: Tensor, batch: Tensor | None) -> None:
+        n = coord.shape[0]
+        c_min = coord.min(dim=0).values.tolist()
+        c_max = coord.max(dim=0).values.tolist()
+        extent = [hi - lo for hi, lo in zip(c_max, c_min)]
+        nan_c = bool(torch.isnan(coord).any() or torch.isinf(coord).any())
+        nan_f = bool(torch.isnan(feat).any() or torch.isinf(feat).any())
+        nb = int(batch.max().item()) + 1 if batch is not None else 1
+        print(
+            f"[ptv3-dbg] n={n} nb={nb} min={c_min} max={c_max} "
+            f"extent={extent} nan_coord={nan_c} nan_feat={nan_f}",
+            flush=True,
+        )
 
     def forward_dict(self, point: dict[str, Tensor]) -> dict[str, Tensor]:
         if "grid_size" not in point:

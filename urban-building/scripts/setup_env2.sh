@@ -97,11 +97,11 @@ else
     echo "[WARN] pointops not found at ${PTv3_DIR}/Pointcept/libs/pointops"
 fi
 
-if [ -d "${PTv3_DIR}/Pointcept/libs/pointgroup_ops" ]; then
+if [ "${BUILD_POINTGROUP_OPS:-0}" = "1" ] && [ -d "${PTv3_DIR}/Pointcept/libs/pointgroup_ops" ]; then
     echo "[INFO] Building pointgroup_ops..."
     uv pip install -e "${PTv3_DIR}/Pointcept/libs/pointgroup_ops" --no-build-isolation
 else
-    echo "[WARN] pointgroup_ops not found at ${PTv3_DIR}/Pointcept/libs/pointgroup_ops"
+    echo "[WARN] Skipping pointgroup_ops. Set BUILD_POINTGROUP_OPS=1 if needed."
 fi
 
 echo ""

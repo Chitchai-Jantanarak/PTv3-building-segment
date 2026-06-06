@@ -247,7 +247,13 @@ class MAEModel(nn.Module):
 
         visible_feat = encoder_feat[visible_idx]
         visible_coord = coord[visible_idx]
-        visible_batch = batch[visible_idx]
+        visible_batch_raw = batch[visible_idx]
+
+        # Remap to contiguous 0..K-1.  After block masking some batch IDs may
+        # have 0 visible points, leaving gaps (e.g. [0,0,2,2]).  PTv3 builds
+        # spconv sparse tensors whose offset arithmetic assumes dense IDs; a
+        # gap causes ScatterGather OOB in the pooling backward.
+        _, visible_batch = torch.unique(visible_batch_raw, return_inverse=True)
 
         encoded = self.encoder(visible_feat, visible_coord, visible_batch)
 

@@ -21,14 +21,16 @@ from src.models.encoders.ptv3.point import (  # noqa: E402
 
 
 def _force_native_algo(model: nn.Module) -> None:
-    if os.environ.get("PTV3_NATIVE_ALGO", "1") == "0":
+    # ConvAlgo.Native backward calls PyTorch's torch.scatter_add, which triggers
+    # ScatterGatherKernel OOB asserts in PyTorch 2.7 with spconv-cu124 2.3.8.
+    # Default is OFF; set PTV3_NATIVE_ALGO=1 only to experiment.
+    if os.environ.get("PTV3_NATIVE_ALGO", "0") != "1":
         return
     try:
         from spconv.core import ConvAlgo
-        import spconv.pytorch as spconv_pt
 
         for m in model.modules():
-            if hasattr(m, "algo") and isinstance(m, spconv_pt.SubMConv3d):
+            if hasattr(m, "algo"):
                 m.algo = ConvAlgo.Native
     except Exception:
         pass

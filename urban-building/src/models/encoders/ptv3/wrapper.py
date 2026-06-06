@@ -29,12 +29,18 @@ def _set_spconv_algo(model: nn.Module) -> None:
     #   - ConvAlgo.MaskSplitImplicitGemm: split-K variant, more robust on SM90.
     #     Used by default here (PTV3_CONV_ALGO env var can override).
     #
+    # MaskSplitImplicitGemm also cannot fuse bias+activation in inference when
+    # pair_mask_fwd_splits > 1 (larger sparse tensors hit this in validation).
+    # PTv3 places a norm layer after every SubMConv3d so bias is redundant;
+    # we strip it to keep the fwd path bias-free and avoid the assertion.
+    #
     # Override with PTV3_CONV_ALGO=Native|MaskImplicitGemm|MaskSplitImplicitGemm
     algo_name = os.environ.get("PTV3_CONV_ALGO", "MaskSplitImplicitGemm")
     if algo_name == "default":
         return  # leave spconv to pick its own default
     try:
         from spconv.core import ConvAlgo
+        import spconv.pytorch as spconv_pt
 
         algo = getattr(ConvAlgo, algo_name, None)
         if algo is None:
@@ -47,6 +53,12 @@ def _set_spconv_algo(model: nn.Module) -> None:
         for m in model.modules():
             if hasattr(m, "algo"):
                 m.algo = algo
+            # Strip bias from SubMConv3d: every such layer in PTv3 is followed
+            # by a norm (PointBatchNorm / LayerNorm) that subsumes the bias.
+            # Without bias, MaskSplitImplicitGemm won't attempt the fused-bias
+            # path and the pair_mask_fwd_splits > 1 assertion never fires.
+            if isinstance(m, spconv_pt.SubMConv3d) and m.bias is not None:
+                m.bias = None
     except Exception:
         pass
 

@@ -105,17 +105,19 @@ class PTv3Encoder(nn.Module):
         if os.environ.get("PTV3_DEBUG", "0") == "1":
             self._debug_coords(feat, coord, batch)
 
-        point = build_point_dict(
-            feat=feat,
-            coord=coord,
-            grid_size=self.grid_size,
-            batch=batch,
-            offset=offset,
-        )
-
-        # spconv does not support reduced-precision dtypes (no bf16/fp16 kernels).
-        # Disable autocast for this module so spconv always runs in float32.
+        # spconv has no reduced-precision kernels (bf16/fp16 both crash with
+        # KeyError in torch_tensor_to_tv).  autocast(enabled=False) stops
+        # internal PTv3 ops from recasting, but the incoming feat tensor may
+        # already be bf16 from the outer AMP context — so we must also upcast
+        # it explicitly before building the sparse tensor.
         with torch.amp.autocast("cuda", enabled=False):
+            point = build_point_dict(
+                feat=feat.float(),
+                coord=coord.float(),
+                grid_size=self.grid_size,
+                batch=batch,
+                offset=offset,
+            )
             point = self.net(point)
 
         return extract_features(point)
@@ -179,15 +181,14 @@ class PTv3EncoderOnly(nn.Module):
         batch: Tensor | None = None,
         offset: Tensor | None = None,
     ) -> Tensor:
-        point = build_point_dict(
-            feat=feat,
-            coord=coord,
-            grid_size=self.grid_size,
-            batch=batch,
-            offset=offset,
-        )
-
         with torch.amp.autocast("cuda", enabled=False):
+            point = build_point_dict(
+                feat=feat.float(),
+                coord=coord.float(),
+                grid_size=self.grid_size,
+                batch=batch,
+                offset=offset,
+            )
             point = self.net(point)
 
         return extract_features(point)

@@ -105,13 +105,6 @@ class PTv3Encoder(nn.Module):
         if os.environ.get("PTV3_DEBUG", "0") == "1":
             self._debug_coords(feat, coord, batch)
 
-        # spconv has no bfloat16 kernel (KeyError in torch_tensor_to_tv).
-        # Cast to float32 for the sparse conv pass; restore caller's dtype on output.
-        input_dtype = feat.dtype
-        if feat.dtype == torch.bfloat16:
-            feat = feat.float()
-            coord = coord.float()
-
         point = build_point_dict(
             feat=feat,
             coord=coord,
@@ -120,10 +113,12 @@ class PTv3Encoder(nn.Module):
             offset=offset,
         )
 
-        point = self.net(point)
+        # spconv does not support reduced-precision dtypes (no bf16/fp16 kernels).
+        # Disable autocast for this module so spconv always runs in float32.
+        with torch.amp.autocast("cuda", enabled=False):
+            point = self.net(point)
 
-        out = extract_features(point)
-        return out.to(input_dtype)
+        return extract_features(point)
 
     @staticmethod
     def _debug_coords(feat: Tensor, coord: Tensor, batch: Tensor | None) -> None:
@@ -184,11 +179,6 @@ class PTv3EncoderOnly(nn.Module):
         batch: Tensor | None = None,
         offset: Tensor | None = None,
     ) -> Tensor:
-        input_dtype = feat.dtype
-        if feat.dtype == torch.bfloat16:
-            feat = feat.float()
-            coord = coord.float()
-
         point = build_point_dict(
             feat=feat,
             coord=coord,
@@ -197,7 +187,7 @@ class PTv3EncoderOnly(nn.Module):
             offset=offset,
         )
 
-        point = self.net(point)
+        with torch.amp.autocast("cuda", enabled=False):
+            point = self.net(point)
 
-        out = extract_features(point)
-        return out.to(input_dtype)
+        return extract_features(point)

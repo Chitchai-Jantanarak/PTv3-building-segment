@@ -1,4 +1,5 @@
 # src/train/_base.py
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,6 +12,14 @@ from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader
 
 from src.core.utils import Logger, clear_cuda_cache, log_memory, save_ckpt
+
+# PYTORCH_DETECT_ANOMALY=1  → enables autograd anomaly detection (slow, gives
+# full Python stack trace for the exact op that produced bad gradients / OOB).
+# Only use for debugging: it disables cuDNN/cuBLAS fast paths significantly.
+if os.environ.get("PYTORCH_DETECT_ANOMALY", "0") == "1":
+    torch.autograd.set_detect_anomaly(True)
+    import warnings
+    warnings.warn("[train] anomaly detection ON — training will be much slower", stacklevel=1)
 
 
 @dataclass

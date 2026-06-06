@@ -80,7 +80,10 @@ class RGBIHead(nn.Module):
 
         finite = torch.isfinite(dist)
         tau = self.log_tau.exp().clamp(min=1e-4)
-        scores = (-dist / tau).masked_fill(~finite, float("-inf"))
+        # Zero-out inf distances before dividing to avoid 0*inf=NaN in backward.
+        # The masked_fill afterward restores -inf scores for invalid neighbors.
+        dist_safe = dist.masked_fill(~finite, 0.0)
+        scores = (-dist_safe / tau).masked_fill(~finite, float("-inf"))
         w = torch.softmax(scores, dim=1)
         w = torch.nan_to_num(w, nan=0.0).unsqueeze(-1).to(h.dtype)
 

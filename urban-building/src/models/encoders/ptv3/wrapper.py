@@ -25,9 +25,10 @@ def _force_native_algo(model: nn.Module) -> None:
         return
     try:
         from spconv.core import ConvAlgo
+        import spconv.pytorch as spconv_pt
 
         for m in model.modules():
-            if hasattr(m, "algo"):
+            if hasattr(m, "algo") and isinstance(m, spconv_pt.SubMConv3d):
                 m.algo = ConvAlgo.Native
     except Exception:
         pass

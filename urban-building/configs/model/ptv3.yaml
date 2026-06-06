@@ -6,7 +6,7 @@ enc_depths: [2, 2, 2, 6, 2]
 dec_channels: [64, 64, 128, 256]
 dec_depths: [2, 2, 2, 2]
 patch_size: 512
-enable_flash: true
+enable_flash: false
 grid_size: 0.04
 latent_dim: 512
 

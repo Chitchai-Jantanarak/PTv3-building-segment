@@ -1,5 +1,6 @@
 # src/models/mae/model.py
 
+import os
 from pathlib import Path
 
 import torch
@@ -256,6 +257,11 @@ class MAEModel(nn.Module):
         _, visible_batch = torch.unique(visible_batch_raw, return_inverse=True)
 
         encoded = self.encoder(visible_feat, visible_coord, visible_batch)
+
+        # MAE_DETACH_ENCODER=1 → skip encoder backward (diagnostic only; encoder
+        # won't be updated).  Use to confirm whether the OOB is inside PTv3.
+        if os.environ.get("MAE_DETACH_ENCODER", "0") == "1":
+            encoded = encoded.detach()
 
         target_feat = feat[:, self.target_feature_indices]
         visible_raw_rgbi = target_feat[visible_idx][:, self.rgbi_pos_tensor]

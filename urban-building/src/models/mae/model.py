@@ -247,8 +247,10 @@ class MAEModel(nn.Module):
 
         visible_feat = encoder_feat[visible_idx]
         visible_coord = coord[visible_idx]
-        visible_batch = batch[visible_idx]
+        visible_batch_raw = batch[visible_idx]
 
+        _, visible_batch = torch.unique(visible_batch_raw, return_inverse=True)
+        
         encoded = self.encoder(visible_feat, visible_coord, visible_batch)
 
         target_feat = feat[:, self.target_feature_indices]

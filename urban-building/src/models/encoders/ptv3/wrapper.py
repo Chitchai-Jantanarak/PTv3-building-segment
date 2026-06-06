@@ -20,8 +20,29 @@ from src.models.encoders.ptv3.point import (  # noqa: E402
 )
 
 
+def _set_spconv_algo(model: nn.Module) -> None:
+    algo_name = os.environ.get("PTV3_CONV_ALGO", "MaskSplitImplicitGemm")
+    if algo_name == "default":
+        return
+    try:
+        from spconv.core import ConvAlgo
+
+        algo = getattr(ConvAlgo, algo_name, None)
+        if algo is None:
+            import warnings
+            warnings.warn(
+                f"Unknown PTV3_CONV_ALGO={algo_name!r}, leaving default",
+                stacklevel=2
+            )
+            return
+        for m in model.modules():
+            if hasattr(m, "algo"):
+                m.algo = algo
+    except Exception:
+        pass
+
 def _force_native_algo(model: nn.Module) -> None:
-    if os.environ.get("PTV3_NATIVE_ALGO", "1") == "0":
+    if os.environ.get("PTV3_NATIVE_ALGO", "0") != "1":
         return
     try:
         from spconv.core import ConvAlgo
@@ -61,7 +82,7 @@ class PTv3Encoder(nn.Module):
         self.grid_size = cfg.model.grid_size
         self.latent_dim = cfg.model.dec_channels[0]
 
-        _force_native_algo(self.net)
+        _set_spconv_algo(self.net)
 
     def forward(
         self,
@@ -135,7 +156,7 @@ class PTv3EncoderOnly(nn.Module):
         self.grid_size = cfg.model.grid_size
         self.latent_dim = bottleneck_dim
 
-        _force_native_algo(self.net)
+        _set_spconv_algo(self.net)
 
     def forward(
         self,

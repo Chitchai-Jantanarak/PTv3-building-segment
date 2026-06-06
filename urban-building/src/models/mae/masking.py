@@ -9,9 +9,11 @@ class BlockMasking:
         self,
         ratio: float = 0.75,
         block_size: int = 64,
+        min_visible: int = 64,
     ):
         self.ratio = ratio
         self.block_size = block_size
+        self.min_visible = min_visible
 
     def __call__(
         self,
@@ -27,17 +29,25 @@ class BlockMasking:
         for b in unique_batches:
             batch_mask = batch == b
             batch_coord = coord[batch_mask]
+            batch_indices = torch.where(batch_mask)[0]
+            n_sample = batch_indices.shape[0]
 
             block_ids = self._assign_blocks(batch_coord)
             unique_blocks = torch.unique(block_ids)
             n_blocks = unique_blocks.shape[0]
 
-            n_masked = int(n_blocks * self.ratio)
+            min_vis_blocks = max(1, n_blocks - int(n_blocks * self.ratio))
+            if self.min_visible > 0 and n_sample > 0:
+                pts_per_block = max(1, n_sample // n_blocks)
+                needed_blocks = max(min_vis_blocks, -(-self.min_visible // pts_per_block))
+                n_keep = min(n_blocks, needed_blocks)
+            else:
+                n_keep = min_vis_blocks
+            n_masked = n_blocks - n_keep    
+
             perm = torch.randperm(n_blocks, device=device)
             masked_blocks = unique_blocks[perm[:n_masked]]
             visible_blocks = unique_blocks[perm[n_masked:]]
-
-            batch_indices = torch.where(batch_mask)[0]
 
             masked_block_mask = torch.isin(block_ids, masked_blocks)
             visible_block_mask = torch.isin(block_ids, visible_blocks)

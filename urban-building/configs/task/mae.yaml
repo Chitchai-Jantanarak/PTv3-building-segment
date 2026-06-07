@@ -58,6 +58,6 @@ scheduler:
 
 precision: bf16
 epochs: 150
-batch_size: 6
+batch_size: 4
 num_workers: 4
-max_batch_points: 400000
+max_batch_points: 300000

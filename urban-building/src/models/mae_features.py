@@ -206,15 +206,33 @@ def build_feature_map(data: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
         feature_map["b"] = rgb_array[:, 2]
 
     intensity = data.get("intensity", None)
+    has_real_intensity = False
     if intensity is not None:
         intensity_array = np.asarray(intensity, dtype=np.float32).reshape(-1)
         if intensity_array.shape[0] != n_points:
             raise ValueError(
                 f"Expected intensity with {n_points} rows, got shape {intensity_array.shape}"
             )
-        feature_map["intensity"] = intensity_array
+        has_real_intensity = bool(np.any(np.abs(intensity_array) > 1e-8))
+        if has_real_intensity:
+            feature_map["intensity"] = intensity_array
+
+    if not has_real_intensity and all(c in feature_map for c in ("r", "g", "b")):
+        feature_map["intensity"] = _vari(
+            feature_map["r"], feature_map["g"], feature_map["b"]
+        )
 
     return feature_map
+
+
+def _vari(r: np.ndarray, g: np.ndarray, b: np.ndarray) -> np.ndarray:
+    r = np.asarray(r, dtype=np.float32)
+    g = np.asarray(g, dtype=np.float32)
+    b = np.asarray(b, dtype=np.float32)
+    denom = g + r - b
+    denom = np.where(np.abs(denom) < 1e-6, 1e-6, denom)
+    vari = (g - r) / denom
+    return np.clip(vari, -1.0, 1.0).astype(np.float32)
 
 
 def assemble_requested_features(

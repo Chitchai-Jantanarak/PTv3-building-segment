@@ -26,6 +26,7 @@ def _set_spconv_algo(model: nn.Module) -> None:
         return
     try:
         from spconv.core import ConvAlgo
+        import spconv.pytorch as spconv_pt
 
         algo = getattr(ConvAlgo, algo_name, None)
         if algo is None:
@@ -38,6 +39,8 @@ def _set_spconv_algo(model: nn.Module) -> None:
         for m in model.modules():
             if hasattr(m, "algo"):
                 m.algo = algo
+            if isinstance(m, spconv_pt.SubMConv3d) and m.bias is not None:
+                m.bias = None
     except Exception:
         pass
 
@@ -94,15 +97,15 @@ class PTv3Encoder(nn.Module):
         if os.environ.get("PTV3_DEBUG", "0") == "1":
             self._debug_coords(feat, coord, batch)
 
-        point = build_point_dict(
-            feat=feat,
-            coord=coord,
-            grid_size=self.grid_size,
-            batch=batch,
-            offset=offset,
-        )
-
-        point = self.net(point)
+        with torch.amp.autocast("cuda", enabled=False):
+            point = build_point_dict(
+                feat=feat.float(),
+                coord=coord.float(),
+                grid_size=self.grid_size,
+                batch=batch,
+                offset=offset,
+            )
+            point = self.net(point)
 
         return extract_features(point)
 
@@ -165,14 +168,14 @@ class PTv3EncoderOnly(nn.Module):
         batch: Tensor | None = None,
         offset: Tensor | None = None,
     ) -> Tensor:
-        point = build_point_dict(
-            feat=feat,
-            coord=coord,
-            grid_size=self.grid_size,
-            batch=batch,
-            offset=offset,
-        )
-
-        point = self.net(point)
+        with torch.amp.autocast("cuda", enabled=False):
+            point = build_point_dict(
+                feat=feat.float(),
+                coord=coord.float(),
+                grid_size=self.grid_size,
+                batch=batch,
+                offset=offset,
+            )
+            point = self.net(point)
 
         return extract_features(point)

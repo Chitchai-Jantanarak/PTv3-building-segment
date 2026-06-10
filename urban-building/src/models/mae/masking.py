@@ -76,13 +76,37 @@ class BlockMasking:
         return block_ids
 
 
-def random_masking(
-    n_points: int,
-    ratio: float,
-    device: torch.device,
-) -> tuple[Tensor, Tensor]:
-    n_masked = int(n_points * ratio)
-    perm = torch.randperm(n_points, device=device)
-    masked_indices = perm[:n_masked]
-    visible_indices = perm[n_masked:]
-    return visible_indices, masked_indices
+class RandomMasking:
+    def __init__(
+        self,
+        ratio: float = 0.75,
+        min_visible: int = 64,
+    ):
+        self.ratio = ratio
+        self.min_visible = min_visible
+
+    def __call__(
+        self,
+        coord: Tensor,
+        batch: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        device = coord.device
+        n = coord.shape[0]
+        visible_mask = torch.zeros(n, dtype=torch.bool, device=device)
+
+        for b in torch.unique(batch):
+            batch_indices = torch.where(batch == b)[0]
+            n_sample = batch_indices.shape[0]
+            n_keep = max(
+                min(self.min_visible, n_sample),
+                n_sample - int(n_sample * self.ratio),
+            )
+            perm = torch.randperm(n_sample, device=device)
+            visible_mask[batch_indices[perm[:n_keep]]] = True
+
+        visible_indices = torch.where(visible_mask)[0]
+        masked_indices = torch.where(~visible_mask)[0]
+
+        return visible_indices, masked_indices, visible_mask
+
+

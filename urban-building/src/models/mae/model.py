@@ -11,7 +11,7 @@ from src.core.utils import as_plain_dict, get_logger
 from src.losses import masked_mse_loss
 from src.models.mae.decoder import MAEDecoder
 from src.models.mae.encoder import MAEEncoder
-from src.models.mae.masking import BlockMasking
+from src.models.mae.masking import BlockMasking, RandomMasking
 from src.models.mae.rgbi_head import RGBIHead
 from src.models.mae_features import (
     get_feature_indices,
@@ -87,10 +87,14 @@ class MAEModel(nn.Module):
             rgbi_dim=self.rgbi_dim,
         )
 
-        self.masking = BlockMasking(
-            ratio=cfg.task.masking.ratio,
-            block_size=cfg.task.masking.block_size,
-        )
+        mask_type = str(cfg.task.masking.get("type", "block")).lower()
+        if mask_type == "random":
+            self.masking = RandomMasking(ratio=cfg.task.masking.ratio)
+        else:
+            self.masking = BlockMasking(
+                ratio=cfg.task.masking.ratio,
+                block_size=cfg.task.masking.block_size,
+            )
 
         self.register_buffer(
             "feature_loss_weights",

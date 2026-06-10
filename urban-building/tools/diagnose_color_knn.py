@@ -15,7 +15,7 @@ import torch
 from hydra import compose, initialize
 
 from src.datasets import build_dataloader
-from src.models.mae.masking import BlockMasking, random_masking
+from src.models.mae.masking import BlockMasking, RandomMasking
 from src.models.mae_features import (
     get_feature_indices,
     resolve_input_feature_names,
@@ -53,7 +53,10 @@ def block_mask(coord: torch.Tensor, block_size: int, ratio: float):
 
 
 def rand_mask(coord: torch.Tensor, ratio: float):
-    return random_masking(coord.shape[0], ratio, coord.device)
+    rm = RandomMasking(ratio=ratio)
+    batch = torch.zeros(coord.shape[0], dtype=torch.long, device=coord.device)
+    vis, msk, _ = rm(coord, batch)
+    return vis, msk
 
 
 def main() -> None:

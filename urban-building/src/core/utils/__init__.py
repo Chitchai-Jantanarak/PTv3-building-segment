@@ -1,5 +1,7 @@
 # src/core/utils/__init__.py
 from src.core.utils.checkpoint import (
+    encoder_bridge_report,
+    encoder_fingerprint,
     get_latest_ckpt,
     load_ckpt,
     load_pretrained_encoder,
@@ -23,5 +25,7 @@ __all__ = [
     "load_ckpt",
     "get_latest_ckpt",
     "load_pretrained_encoder",
+    "encoder_bridge_report",
+    "encoder_fingerprint",
     "as_plain_dict",
 ]

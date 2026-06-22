@@ -11,7 +11,6 @@ from src.train.mae import train_mae
 from src.train.seg_a import train_seg_a
 from src.train.seg_b_color import train_seg_b_color
 from src.train.seg_b_geom import train_seg_b_geom
-from src.train.seg_b_v2 import train_seg_b_v2
 
 __all__ = [
     "train_epoch",
@@ -23,6 +22,5 @@ __all__ = [
     "train_seg_a",
     "train_seg_b_geom",
     "train_seg_b_color",
-    "train_seg_b_v2",
     "train_hazus",
 ]

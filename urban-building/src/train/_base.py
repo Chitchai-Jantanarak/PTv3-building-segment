@@ -10,7 +10,13 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader
 
-from src.core.utils import Logger, clear_cuda_cache, log_memory, save_ckpt
+from src.core.utils import (
+    Logger,
+    clear_cuda_cache,
+    encoder_fingerprint,
+    log_memory,
+    save_ckpt,
+)
 
 
 @dataclass
@@ -100,6 +106,11 @@ def train_loop(
     ckpt_dir = Path(cfg.paths.ckpt_root) / cfg.task.name
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
+    try:
+        fingerprint = encoder_fingerprint(cfg)
+    except Exception:
+        fingerprint = None
+
     precision = str(cfg.task.get("precision", cfg.run.get("precision", "fp32"))).lower()
     use_amp = device.type == "cuda" and precision != "fp32"
     autocast_dtype: torch.dtype | None = None
@@ -164,7 +175,9 @@ def train_loop(
         if current_loss < best_loss:
             best_loss = current_loss
             no_improve = 0
-            save_ckpt(model, optimizer, epoch, ckpt_dir, best=True)
+            save_ckpt(
+                model, optimizer, epoch, ckpt_dir, best=True, fingerprint=fingerprint
+            )
             logger.info(f"Best model saved at epoch {epoch}")
         else:
             no_improve += 1

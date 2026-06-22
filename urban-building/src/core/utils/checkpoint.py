@@ -8,6 +8,20 @@ import torch.nn as nn
 from torch.optim import Optimizer
 
 
+def encoder_fingerprint(cfg: Any) -> dict[str, Any]:
+    m = cfg.model
+    return {
+        "in_channels": int(m.in_channels),
+        "enc_channels": list(m.enc_channels),
+        "dec_channels": list(m.dec_channels),
+        "enc_depths": list(m.enc_depths),
+        "dec_depths": list(m.dec_depths),
+        "patch_size": int(m.patch_size),
+        "grid_size": float(m.grid_size),
+        "intensity_channel": bool(m.get("intensity_channel", False)),
+    }
+
+
 def save_ckpt(
     model: nn.Module,
     optimizer: Optimizer,
@@ -15,6 +29,7 @@ def save_ckpt(
     path: str | Path,
     best: bool = False,
     extra: dict[str, Any] | None = None,
+    fingerprint: dict[str, Any] | None = None,
 ) -> str:
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
@@ -25,6 +40,9 @@ def save_ckpt(
         "optimizer_state_dict": optimizer.state_dict(),
         "timestamp": datetime.now().isoformat(),
     }
+
+    if fingerprint is not None:
+        state["encoder_fingerprint"] = fingerprint
 
     if extra:
         state.update(extra)
@@ -115,10 +133,110 @@ def load_ckpt(
     return state
 
 
+def _extract_encoder_state(mae_state: dict[str, Any]) -> dict[str, Any]:
+    encoder_state = {}
+    for key, value in mae_state.items():
+        if key.startswith("encoder.encoder."):
+            encoder_state[key[len("encoder.") :]] = value
+    return encoder_state
+
+
+def _bridge_report(
+    model: nn.Module, encoder_state: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    model_sd = model.state_dict()
+    filtered: dict[str, Any] = {}
+    unexpected: list[str] = []
+    shape_mismatches: list[tuple[str, tuple, tuple]] = []
+
+    for key, value in encoder_state.items():
+        if key not in model_sd:
+            unexpected.append(key)
+            continue
+        if tuple(model_sd[key].shape) != tuple(value.shape):
+            shape_mismatches.append(
+                (key, tuple(value.shape), tuple(model_sd[key].shape))
+            )
+            continue
+        filtered[key] = value
+
+    model_encoder_keys = [k for k in model_sd if k.startswith("encoder.")]
+    encoder_missing = [k for k in model_encoder_keys if k not in filtered]
+
+    report: dict[str, Any] = {
+        "n_offered": len(encoder_state),
+        "n_loaded": len(filtered),
+        "n_model_encoder_keys": len(model_encoder_keys),
+        "encoder_missing": encoder_missing,
+        "unexpected": unexpected,
+        "shape_mismatches": shape_mismatches,
+    }
+    report["ok"] = (
+        report["n_loaded"] > 0
+        and not encoder_missing
+        and not unexpected
+        and not shape_mismatches
+    )
+    return report, filtered
+
+
+def _format_bridge_failure(report: dict[str, Any]) -> str:
+    lines = [
+        "MAE encoder bridge verification FAILED:",
+        f"  offered={report['n_offered']} loaded={report['n_loaded']} "
+        f"model_encoder_keys={report['n_model_encoder_keys']}",
+    ]
+    if report["shape_mismatches"]:
+        lines.append(f"  shape mismatches ({len(report['shape_mismatches'])}):")
+        for k, ck, mk in report["shape_mismatches"][:10]:
+            lines.append(f"    {k}: ckpt={ck} model={mk}")
+    if report["unexpected"]:
+        lines.append(
+            f"  unexpected ckpt keys not in model ({len(report['unexpected'])}): "
+            f"{report['unexpected'][:10]}"
+        )
+    if report["encoder_missing"]:
+        lines.append(
+            f"  model encoder keys NOT loaded -- random weights "
+            f"({len(report['encoder_missing'])}): {report['encoder_missing'][:10]}"
+        )
+    lines.append(
+        "  -> cfg.model likely drifted from the MAE training config. "
+        "Reconcile configs/model/ptv3.yaml (and data feature flags) and re-verify."
+    )
+    return "\n".join(lines)
+
+
+def encoder_bridge_report(
+    model: nn.Module,
+    mae_ckpt_path: str | Path,
+    device: str | None = None,
+) -> dict[str, Any]:
+    mae_ckpt_path = Path(mae_ckpt_path)
+    if not mae_ckpt_path.exists():
+        raise FileNotFoundError(f"MAE checkpoint not found: {mae_ckpt_path}")
+
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    state = torch.load(mae_ckpt_path, map_location=device)
+    encoder_state = _extract_encoder_state(state["model_state_dict"])
+    if not encoder_state:
+        raise ValueError(
+            f"No encoder weights (encoder.encoder.*) found in MAE checkpoint. "
+            f"Keys start with: {list(state['model_state_dict'].keys())[:5]}"
+        )
+
+    report, _ = _bridge_report(model, encoder_state)
+    report["ckpt_fingerprint"] = state.get("encoder_fingerprint")
+    return report
+
+
 def load_pretrained_encoder(
     model: nn.Module,
     mae_ckpt_path: str | Path,
     device: str | None = None,
+    strict_encoder: bool = True,
 ) -> int:
     mae_ckpt_path = Path(mae_ckpt_path)
     if not mae_ckpt_path.exists():
@@ -128,47 +246,27 @@ def load_pretrained_encoder(
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
     state = torch.load(mae_ckpt_path, map_location=device)
-    mae_state = state["model_state_dict"]
-
-    # Extract encoder keys: encoder.encoder.net.* -> encoder.net.*
-    encoder_state = {}
-    for key, value in mae_state.items():
-        if key.startswith("encoder.encoder."):
-            new_key = key[len("encoder.") :]  # strip first "encoder."
-            encoder_state[new_key] = value
+    encoder_state = _extract_encoder_state(state["model_state_dict"])
 
     if not encoder_state:
         raise ValueError(
             f"No encoder weights found in MAE checkpoint. "
-            f"Keys start with: {list(mae_state.keys())[:5]}"
+            f"Keys start with: {list(state['model_state_dict'].keys())[:5]}"
         )
 
-    missing, unexpected = model.load_state_dict(encoder_state, strict=False)
+    report, filtered = _bridge_report(model, encoder_state)
 
-    # Validate: encoder keys we extracted should have been accepted by the model.
-    # `unexpected` = keys we supplied that the model doesn't have.
-    n_loaded = len(encoder_state) - len(unexpected)
-    if unexpected:
+    if strict_encoder and not report["ok"]:
+        raise RuntimeError(_format_bridge_failure(report))
+
+    model.load_state_dict(filtered, strict=False)
+
+    if not strict_encoder and not report["ok"]:
         import logging
 
-        logging.getLogger("checkpoint").warning(
-            f"Encoder loading: {len(unexpected)} unexpected keys "
-            f"(not in model): {unexpected[:5]}"
-        )
-    if missing:
-        import logging
+        logging.getLogger("checkpoint").warning(_format_bridge_failure(report))
 
-        # missing keys are model params NOT in the checkpoint -- expected for
-        # the seg head, but encoder.* misses indicate a real problem.
-        encoder_missing = [k for k in missing if k.startswith("encoder.")]
-        if encoder_missing:
-            logging.getLogger("checkpoint").warning(
-                f"Encoder loading: {len(encoder_missing)} encoder keys "
-                f"MISSING from checkpoint (weights are random): "
-                f"{encoder_missing[:5]}"
-            )
-
-    return n_loaded
+    return report["n_loaded"]
 
 
 def get_latest_ckpt(path: str | Path) -> Path | None:

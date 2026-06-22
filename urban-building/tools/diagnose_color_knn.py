@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import os
 
-os.environ.setdefault("SPCONV_ALGO", "native")
+os.environ.setdefault("PTV3_CONV_ALGO", "MaskSplitImplicitGemm")
 
 import torch
 from hydra import compose, initialize

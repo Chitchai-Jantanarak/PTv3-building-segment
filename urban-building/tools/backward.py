@@ -1,7 +1,7 @@
 import os
 import sys
 
-os.environ.setdefault("SPCONV_ALGO", "native")
+os.environ.setdefault("PTV3_CONV_ALGO", "MaskSplitImplicitGemm")
 
 import torch
 import spconv

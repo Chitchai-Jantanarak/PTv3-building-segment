@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 
-os.environ.setdefault("SPCONV_ALGO", "native")
+os.environ.setdefault("PTV3_CONV_ALGO", "MaskSplitImplicitGemm")
 
 import hydra
 from omegaconf import DictConfig
@@ -72,10 +72,6 @@ def dispatch_task(cfg: DictConfig) -> None:
         from src.train import train_seg_b_color
 
         train_seg_b_color(cfg)
-    elif task_name == "seg_b_v2":
-        from src.train import train_seg_b_v2
-
-        train_seg_b_v2(cfg)
     elif task_name == "hazus":
         from src.train import train_hazus
 

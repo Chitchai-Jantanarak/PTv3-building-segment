@@ -4,8 +4,8 @@ model: mae
 freeze_encoder: false
 
 masking:
-  type: block
-  ratio: 0.5
+  type: random
+  ratio: 0.3
   block_size: 8
 
 loss:
@@ -57,7 +57,7 @@ scheduler:
   warmup_epochs: 10
 
 precision: bf16
-epochs: 150
-batch_size: 6
+epochs: 300
+batch_size: 4
 num_workers: 4
-max_batch_points: 400000
+max_batch_points: 128000

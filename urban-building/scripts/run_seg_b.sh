@@ -10,14 +10,14 @@ MODE="${1:-geom}"
 echo "[SEGB] Starting Seg-B ${MODE} training..."
 
 if [ "${MODE}" == "geom" ]; then
-    sed -i 's/task: .*/task: seg_b_geom/' configs/config.yaml
+    TASK="seg_b_geom"
 elif [ "${MODE}" == "color" ]; then
-    sed -i 's/task: .*/task: seg_b_color/' configs/config.yaml
+    TASK="seg_b_color"
 else
     echo "[ERR] Unknown mode: ${MODE}"
     exit 1
 fi
 
-python main.py
+python main.py task="${TASK}"
 
 echo "[DONE] Seg-B ${MODE} training complete"

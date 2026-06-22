@@ -170,7 +170,8 @@ constraint-dependencies = [
 ]
 
 [tool.uv.extra-build-dependencies]
-flash-attn = ["psutil", "wheel", "setuptools"]
+flash-attn = ["packaging", "ninja", "psutil", "wheel", "setuptools>=70.1"]
+pointops = ["torch", "setuptools>=70.1"]
 
 # ============================================================
 # Ruff (Linting & Formatting)

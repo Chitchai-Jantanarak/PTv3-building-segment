@@ -7,8 +7,6 @@ cd "${PROJECT_DIR}"
 
 echo "[MAE] Starting MAE pretraining..."
 
-sed -i 's/task: .*/task: mae/' configs/config.yaml
-
-python main.py
+python main.py task=mae
 
 echo "[DONE] MAE pretraining complete"

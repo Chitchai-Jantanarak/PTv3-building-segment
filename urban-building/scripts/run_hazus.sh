@@ -7,8 +7,6 @@ cd "${PROJECT_DIR}"
 
 echo "[HAZ] Starting HAZUS training..."
 
-sed -i 's/task: .*/task: hazus/' configs/config.yaml
-
-python main.py
+python main.py task=hazus
 
 echo "[DONE] HAZUS training complete"   

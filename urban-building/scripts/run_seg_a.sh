@@ -7,8 +7,6 @@ cd "${PROJECT_DIR}"
 
 echo "[SEGA] Starting Seg-A training..."
 
-sed -i 's/task: .*/task: seg_a/' configs/config.yaml
-
-python main.py
+python main.py task=seg_a
 
 echo "[DONE] Seg-A training complete"

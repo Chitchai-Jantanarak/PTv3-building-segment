@@ -61,27 +61,24 @@ echo "[3/7] Installing torch-scatter..."
 uv pip install torch-scatter -f "${PYG_WHEEL_URL}"
 
 echo ""
-echo "[4/7] Installing flash-attn..."
+echo "[4/7] Installing flash-attn (source build — avoids GLIBC_2.32 prebuilt issue)..."
 
-if ! uv pip install "flash-attn==${FLASH_ATTN_VERSION}" 2>/dev/null; then
-    echo "[INFO] No prebuilt wheel found, building flash-attn from source..."
+uv pip install packaging ninja psutil wheel setuptools
 
-    uv pip install packaging ninja psutil wheel setuptools
-
-    if [ -z "${CUDA_HOME:-}" ]; then
-        if [ -d "/usr/local/cuda" ]; then
-            export CUDA_HOME="/usr/local/cuda"
-        elif [ -d "/usr/local/cuda-12.4" ]; then
-            export CUDA_HOME="/usr/local/cuda-12.4"
-        fi
-        echo "[INFO] CUDA_HOME=${CUDA_HOME:-<not set>}"
-    fi
-
-    export MAX_JOBS=${MAX_JOBS:-4}
-
-    uv pip install "flash-attn==${FLASH_ATTN_VERSION}" --no-build-isolation \
-        || echo "[WARN] flash-attn build failed — PTv3 will fall back to non-flash attention (slower but functional)"
+if [ -z "${CUDA_HOME:-}" ]; then
+    for p in /usr/local/cuda /usr/local/cuda-12.8 /usr/local/cuda-12.4; do
+        if [ -d "${p}" ]; then export CUDA_HOME="${p}"; break; fi
+    done
+    echo "[INFO] CUDA_HOME=${CUDA_HOME:-<not set>}"
 fi
+export MAX_JOBS="${MAX_JOBS:-4}"
+export FLASH_ATTENTION_FORCE_BUILD=TRUE
+
+# pip (not uv pip) so that --no-binary is honoured — uv ignores the flag
+# and may pull a prebuilt wheel that links GLIBC_2.32 unavailable on some hosts.
+python -m pip install "flash-attn==${FLASH_ATTN_VERSION}" \
+    --no-build-isolation --no-binary flash-attn \
+    || echo "[WARN] flash-attn source build failed — set enable_flash: false in configs/model/ptv3.yaml to skip"
 
 echo ""
 echo "[5/7] Installing timm, addict, einops..."

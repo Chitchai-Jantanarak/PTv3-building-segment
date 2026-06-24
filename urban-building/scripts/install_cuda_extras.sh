@@ -68,26 +68,31 @@ echo "[3/4] flash-attn"
 if [ "${SKIP_FLASH_ATTN:-0}" = "1" ]; then
     echo "      SKIP_FLASH_ATTN=1, skipping"
 else
-    # Try to import; also catch the GLIBC link error (ImportError, not ModuleNotFoundError)
+    # Prebuilt flash-attn wheels often link GLIBC_2.32 symbols that older
+    # container base images don't export even when ldd reports a newer glibc.
+    # Always build from source with pip (not uv pip — uv ignores --no-binary).
     FLASH_OK=0
     python -c "import flash_attn" 2>/dev/null && FLASH_OK=1
 
     if [ "${FLASH_OK}" = "1" ]; then
         echo "      already importable, skipping"
     else
-        echo "      prebuilt wheel not working — building from source (takes ~20-40 min)..."
+        echo "      building flash-attn from source (takes ~20-40 min)..."
         # Wipe any broken prebuilt first
-        uv pip uninstall flash-attn 2>/dev/null || true
+        python -m pip uninstall -y flash-attn 2>/dev/null || true
 
         if [ -z "${CUDA_HOME:-}" ]; then
-            for p in /usr/local/cuda /usr/local/cuda-12.4 /usr/local/cuda-12.8; do
+            for p in /usr/local/cuda /usr/local/cuda-12.8 /usr/local/cuda-12.4; do
                 if [ -d "${p}" ]; then CUDA_HOME="${p}"; break; fi
             done
         fi
         echo "      CUDA_HOME=${CUDA_HOME:-<not set>}"
         export MAX_JOBS="${MAX_JOBS:-4}"
+        export FLASH_ATTENTION_FORCE_BUILD=TRUE
 
-        uv pip install flash-attn --no-build-isolation --no-binary flash-attn \
+        # Use pip (not uv pip) so --no-binary is honoured and no prebuilt wheel
+        # is pulled from cache.
+        python -m pip install flash-attn --no-build-isolation --no-binary flash-attn \
             || echo "[WARN] flash-attn source build failed — set enable_flash: false in configs/model/ptv3.yaml"
     fi
 fi

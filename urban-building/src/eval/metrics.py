@@ -9,8 +9,7 @@ def confusion_matrix(
     targets: np.ndarray,
     num_classes: int,
     ignore_index: int = -100,
-) -> np.ndarray:
-    """Compute NxN confusion matrix. Rows=true, Cols=predicted."""
+) -> np.ndarray:   # rows=true, cols=predicted
     valid = (targets != ignore_index) & (targets >= 0) & (targets < num_classes)
     p = preds[valid]
     t = targets[valid]
@@ -20,8 +19,7 @@ def confusion_matrix(
     return cm
 
 
-def per_class_iou(cm: np.ndarray) -> np.ndarray:
-    """Per-class IoU from confusion matrix. Returns array of shape (num_classes,)."""
+def per_class_iou(cm: np.ndarray) -> np.ndarray:   # -> (num_classes,)
     tp = np.diag(cm)
     fp = cm.sum(axis=0) - tp
     fn = cm.sum(axis=1) - tp
@@ -87,24 +85,7 @@ def boundary_iou(
     num_classes: int,
     boundary_dist: float = 0.5,
     ignore_index: int = -100,
-) -> np.ndarray:
-    """IoU computed only on points near class boundaries.
-
-    A point is on a boundary if any of its k-nearest neighbors has a
-    different ground-truth label. Uses a distance threshold instead of
-    exact kNN for speed on large point clouds.
-
-    Args:
-        preds: predicted labels (N,)
-        targets: ground truth labels (N,)
-        coords: point coordinates (N, 3)
-        num_classes: number of classes
-        boundary_dist: distance threshold to define boundary region
-        ignore_index: label to ignore
-
-    Returns:
-        Per-class boundary IoU array of shape (num_classes,).
-    """
+) -> np.ndarray:   # -> per-class boundary IoU (num_classes,)
     from scipy.spatial import cKDTree
 
     valid = (targets != ignore_index) & (targets >= 0) & (targets < num_classes)
@@ -113,10 +94,8 @@ def boundary_iou(
     preds_v = preds[valid]
 
     tree = cKDTree(coords_v)
-    # For each point, find neighbors within boundary_dist
     neighbor_lists = tree.query_ball_point(coords_v, r=boundary_dist)
 
-    # A point is on the boundary if any neighbor has a different label
     boundary_mask = np.zeros(len(coords_v), dtype=bool)
     for i, neighbors in enumerate(neighbor_lists):
         labels_in_neighborhood = targets_v[neighbors]
@@ -333,7 +312,6 @@ def per_feature_mse(
     target: np.ndarray,
     feature_names: list[str] | None = None,
 ) -> dict[str, float]:
-    """MSE per feature."""
     if feature_names is None:
         feature_names = [f"feat_{i}" for i in range(pred.shape[1])]
 
@@ -349,8 +327,7 @@ def per_feature_rmse(
     pred: np.ndarray,
     target: np.ndarray,
     feature_names: list[str] | None = None,
-) -> dict[str, float]:
-    """RMSE per feature — same units as the original data, more interpretable."""
+) -> dict[str, float]:   # RMSE: same units as original data
     if feature_names is None:
         feature_names = [f"feat_{i}" for i in range(pred.shape[1])]
     result = {}

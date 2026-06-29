@@ -1,5 +1,4 @@
 # src/eval/plots.py
-"""Matplotlib plotting functions for evaluation metrics."""
 
 from pathlib import Path
 
@@ -22,7 +21,6 @@ def plot_loss_curves(
     out_path: Path,
     title: str = "Training Loss",
 ) -> None:
-    """Plot train (and optionally val) loss curves over epochs."""
     fig, ax = plt.subplots(figsize=(10, 5))
     epochs = range(1, len(train_losses) + 1)
 
@@ -36,7 +34,6 @@ def plot_loss_curves(
     ax.legend()
     ax.grid(True, alpha=0.3)
 
-    # Log scale if loss range is large
     if train_losses and max(train_losses) / max(min(train_losses), 1e-10) > 100:
         ax.set_yscale("log")
 
@@ -53,7 +50,6 @@ def plot_confusion_matrix(
     title: str = "Confusion Matrix",
     normalize: bool = True,
 ) -> None:
-    """Plot confusion matrix heatmap."""
     if normalize:
         row_sums = cm.sum(axis=1, keepdims=True)
         cm_plot = np.where(row_sums > 0, cm / row_sums, 0.0)
@@ -71,7 +67,6 @@ def plot_confusion_matrix(
     ax.set_xticklabels(class_names, rotation=45, ha="right", fontsize=8)
     ax.set_yticklabels(class_names, fontsize=8)
 
-    # Annotate cells
     thresh = 0.5
     for i in range(n):
         for j in range(n):
@@ -95,7 +90,6 @@ def plot_per_class_iou(
     boundary_iou: np.ndarray | None = None,
     title: str = "Per-Class IoU",
 ) -> None:
-    """Bar chart of per-class IoU, optionally with boundary IoU overlay."""
     n = len(class_names)
     x = np.arange(n)
     width = 0.35 if boundary_iou is not None else 0.6
@@ -140,16 +134,13 @@ def plot_chamfer_histogram(
     out_path: Path,
     title: str = "Chamfer Distance Distribution",
 ) -> None:
-    """Histogram of per-point chamfer distances with summary stats."""
     fig, ax = plt.subplots(figsize=(10, 5))
 
-    # Clip outliers for better visualization
     p99 = np.percentile(distances, 99)
     plot_dists = distances[distances <= p99]
 
     ax.hist(plot_dists, bins=100, color="#4C72B0", alpha=0.8, edgecolor="none")
 
-    # Stats lines
     mean_d = distances.mean()
     median_d = np.median(distances)
     ax.axvline(
@@ -169,7 +160,6 @@ def plot_chamfer_histogram(
     ax.legend()
     ax.grid(axis="y", alpha=0.3)
 
-    # Add text box with stats
     stats_text = (
         f"N={len(distances):,}\n"
         f"Mean={mean_d:.4f}\n"
@@ -200,12 +190,10 @@ def plot_height_wise_error(
     out_path: Path,
     title: str = "Height-wise Reconstruction Error",
 ) -> None:
-    """Error vs height with std band and point count overlay."""
     valid = counts > 0
 
     fig, ax1 = plt.subplots(figsize=(10, 5))
 
-    # Error line with std fill
     ax1.plot(
         bin_centers[valid],
         mean_error[valid],
@@ -225,7 +213,6 @@ def plot_height_wise_error(
     ax1.set_ylabel("Mean Error", color="#4C72B0")
     ax1.tick_params(axis="y", labelcolor="#4C72B0")
 
-    # Point count on secondary axis
     ax2 = ax1.twinx()
     ax2.bar(
         bin_centers[valid],
@@ -251,10 +238,8 @@ def plot_error_heatmap(
     out_path: Path,
     title: str = "Spatial Error Heatmap (XY)",
 ) -> None:
-    """2D heatmap of mean reconstruction error projected onto XY plane."""
     fig, ax = plt.subplots(figsize=(10, 8))
 
-    # Mask NaN cells (no points)
     masked_grid = np.ma.masked_invalid(grid)
 
     im = ax.pcolormesh(
@@ -282,14 +267,12 @@ def plot_per_feature_mse(
     out_path: Path,
     title: str = "Per-Feature Reconstruction MSE",
 ) -> None:
-    """Bar chart of per-feature MSE values."""
     names = [k for k in feature_mse if k != "total"]
     values = [feature_mse[k] for k in names]
 
     fig, ax = plt.subplots(figsize=(8, 5))
     bars = ax.bar(names, values, color="#4C72B0", alpha=0.8)
 
-    # Annotate bars with values
     for bar, val in zip(bars, values, strict=True):
         ax.text(
             bar.get_x() + bar.get_width() / 2,
@@ -325,11 +308,6 @@ def plot_pred_vs_actual(
     highlight: list[str] | None = None,
     max_points: int = 5000,
 ) -> None:
-    """Scatter plot of predicted vs actual value for each feature.
-    
-    The key diagnostic plot — if points lie on y=x line, reconstruction is good.
-    If points cluster horizontally at mean(target), model has mean-collapsed.
-    """
     highlight = highlight or ["z", "rel_z"]
     n_feat = len(feature_names)
     ncols = min(4, n_feat)
@@ -346,18 +324,15 @@ def plot_pred_vs_actual(
         t = target[:, i]
         p = pred[:, i]
 
-        # Subsample for speed
         idx = rng.choice(len(t), min(max_points, len(t)), replace=False)
         t_s, p_s = t[idx], p[idx]
 
         color = "crimson" if name in highlight else "#4C72B0"
         ax.scatter(t_s, p_s, s=2, alpha=0.3, color=color, rasterized=True)
 
-        # Perfect prediction line
         lims = [min(t_s.min(), p_s.min()), max(t_s.max(), p_s.max())]
         ax.plot(lims, lims, "k--", linewidth=1, alpha=0.6, label="y=x")
 
-        # R² in title
         ss_res = ((t - p) ** 2).sum()
         ss_tot = ((t - t.mean()) ** 2).sum()
         r2 = 1.0 - ss_res / (ss_tot + 1e-10)
@@ -369,7 +344,6 @@ def plot_pred_vs_actual(
         ax.set_ylabel("Predicted")
         ax.grid(True, alpha=0.2)
 
-    # Hide unused axes
     for j in range(n_feat, len(axes)):
         axes[j].set_visible(False)
 
@@ -385,11 +359,6 @@ def plot_error_distribution(
     out_path: Path,
     highlight: list[str] | None = None,
 ) -> None:
-    """Error distribution histogram per feature.
-    
-    Narrow centered distribution → good reconstruction.
-    Wide or off-center → high variance or bias.
-    """
     highlight = highlight or ["z", "rel_z"]
     n_feat = len(feature_names)
     ncols = min(4, n_feat)
@@ -429,11 +398,6 @@ def plot_r2_bars(
     out_path: Path,
     title: str = "R² Score per Feature",
 ) -> None:
-    """Bar chart of R² scores.
-    
-    R²=1 is perfect. R²=0 means predicting mean. R²<0 is worse than mean.
-    Most useful single plot for diagnosing mean-collapse on z/rel_z.
-    """
     names = list(r2_scores.keys())
     values = list(r2_scores.values())
 
@@ -551,15 +515,10 @@ def plot_all(
     out_dir: Path,
     class_names: list[str] | None = None,
 ) -> list[Path]:
-    """Dispatch to appropriate plotting functions based on task.
-
-    Returns list of saved plot paths.
-    """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     saved = []
 
-    # Loss curves (common to all tasks)
     if "train_losses" in metrics:
         p = out_dir / "loss_curves.png"
         plot_loss_curves(
@@ -570,7 +529,6 @@ def plot_all(
         )
         saved.append(p)
 
-    # Seg-A Plots
     if task == "seg_a":
         if "confusion_matrix" in metrics and class_names:
             p = out_dir / "confusion_matrix.png"
@@ -587,7 +545,6 @@ def plot_all(
             )
             saved.append(p)
 
-    # Seg-B Plots
     elif task in ("seg_b_geom", "seg_b_color"):
         if "chamfer" in metrics:
             p = out_dir / "chamfer_histogram.png"
@@ -608,7 +565,6 @@ def plot_all(
             plot_error_heatmap(eg["grid"], eg["x_edges"], eg["y_edges"], p)
             saved.append(p)
 
-    # MAE Plots
     elif task == "mae":
         if "feature_mse" in metrics:
             p = out_dir / "per_feature_mse.png"

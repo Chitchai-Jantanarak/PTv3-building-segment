@@ -1,5 +1,4 @@
 # src/eval/evaluate.py
-"""Post-training evaluation: run inference on val set, compute metrics, plot."""
 
 from pathlib import Path
 
@@ -41,7 +40,6 @@ def _collect_seg_a_predictions(
     device: torch.device,
     num_classes: int,
 ) -> dict[str, np.ndarray]:
-    """Run Seg-A model on dataloader, collect predictions + labels + coords."""
     model.eval()
     all_preds = []
     all_labels = []
@@ -80,7 +78,6 @@ def _collect_seg_b_predictions(
     dataloader: DataLoader,
     device: torch.device,
 ) -> dict[str, np.ndarray]:
-    # geometry kept per-scene (chamfer needs within-scene NN); color pools safely
     model.eval()
     scenes: list[tuple[np.ndarray, np.ndarray]] = []
     all_pred_rgb = []
@@ -116,7 +113,6 @@ def _collect_seg_b_predictions(
                 target_rgb = batch["rgb"][batch["mask"]].to(device)
                 xyz_pred = output["xyz_pred"]
                 if target_rgb.shape[0] > 0 and xyz_pred.shape[0] > 0:
-                    # match each pred to nearest target, compare colors (per scene)
                     nn_idx = torch.cdist(xyz_pred, target.to(device)).argmin(dim=1)
                     all_pred_rgb.append(output["rgb_pred"].cpu().numpy())
                     all_target_rgb.append(target_rgb[nn_idx].cpu().numpy())
@@ -133,11 +129,6 @@ def _collect_mae_predictions(
     dataloader: DataLoader,
     device: torch.device,
 ) -> dict[str, np.ndarray]:
-    """Run MAE model on dataloader, collect reconstructed + original features.
-
-    Also stashes the first batch's full per-point tensors under `sample_*` keys
-    so 3D diagnostic plots have something to render.
-    """
     model.eval()
     all_recon = []
     all_target = []
@@ -163,8 +154,6 @@ def _collect_mae_predictions(
             all_recon.append(recon)
             all_target.append(target)
 
-            # Stash first batch as a 3D-plot sample. Restrict to the first
-            # cloud (batch idx 0) so coords are a single contiguous scene.
             if sample_payload is None:
                 first_mask = batch_idx == 0
                 sel = first_mask.nonzero(as_tuple=False).squeeze(-1)
@@ -220,7 +209,6 @@ def evaluate_seg_a(
     out_dir: Path,
     compute_boundary: bool = True,
 ) -> dict:
-    """Full Seg-A evaluation: confusion matrix, IoU, boundary IoU, plots."""
     logger.info("Evaluating Seg-A on validation set...")
     data = _collect_seg_a_predictions(model, val_loader, device, num_classes)
 
@@ -354,7 +342,6 @@ def evaluate_mae(
     device: torch.device,
     out_dir: Path,
 ) -> dict:
-    """MAE evaluation: per-feature MSE, RMSE, bias, R², scatter plots."""
     logger.info("Evaluating MAE on validation set...")
     data = _collect_mae_predictions(model, val_loader, device)
 
@@ -375,14 +362,12 @@ def evaluate_mae(
             f"  Bias={fb[name]:+.4f}  R²={fr2[name]:.4f}"
         )
 
-    # Error by value bins for z and rel_z
     bins_data = {}
     for feat in ("z", "rel_z"):
         if feature_names and feat in feature_names:
             idx = feature_names.index(feat)
             bins_data[feat] = error_by_value_bins(pred, target, idx)
 
-    # Group summary: geom / rgb / intensity
     groups = {
         "geom": ["x", "y", "z", "rel_z"],
         "rgb": ["r", "g", "b"],
@@ -492,10 +477,6 @@ def run_evaluation(
     val_losses: list[float] | None = None,
     cfg: DictConfig | None = None,
 ) -> dict:
-    """Run full evaluation for any task and generate plots.
-
-    Called at the end of training. Returns metrics dict.
-    """
     if val_loader is None:
         logger.warning("No validation loader — skipping evaluation")
         return {}
@@ -512,7 +493,6 @@ def run_evaluation(
 
     if task == "seg_a":
         num_classes = cfg.data.get("num_classes", 13) if cfg else 13
-        # Get class names from dataset
         if (
             hasattr(val_loader.dataset, "_class_names")
             and val_loader.dataset._class_names
@@ -553,7 +533,6 @@ def run_evaluation(
         if num_classes:
             metrics.update(evaluate_hazus(model, val_loader, device, num_classes))
 
-    # Generate plots
     plot_dir = out_dir / "plots"
     saved = plot_all(task, metrics, plot_dir, class_names=class_names)
 
@@ -570,7 +549,6 @@ def run_evaluation(
 def _json_safe(value: object, key: str = "") -> object:
     import numpy as _np
 
-    # drop big per-point arrays; keep scalars + small arrays
     skip = {"pred", "target", "coords", "distances", "recon_error",
             "pred_rgb", "target_rgb", "latent_pca", "sample", "sample_3d"}
     if key in skip:

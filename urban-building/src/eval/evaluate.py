@@ -12,6 +12,7 @@ from src.core.utils import get_logger
 from src.eval.metrics import (
     boundary_iou,
     chamfer_stats,
+    color_stats,
     confusion_matrix,
     error_by_value_bins,
     height_wise_error,
@@ -45,7 +46,11 @@ def _collect_seg_a_predictions(
             coord = batch["coords"].to(device)
             batch_idx = batch["batch"].to(device)
 
-            output = model(feat, coord, batch_idx)
+            rgb = batch.get("rgb")
+            if rgb is not None:
+                rgb = rgb.to(device)
+
+            output = model(feat, coord, batch_idx, rgb=rgb)
             preds = torch.argmax(output["logits"], dim=-1)
 
             all_preds.append(preds.cpu().numpy())
@@ -72,27 +77,49 @@ def _collect_seg_b_predictions(
     model.eval()
     all_pred_xyz = []
     all_target_xyz = []
+    all_pred_rgb = []
+    all_target_rgb = []
 
     with torch.no_grad():
         for batch in dataloader:
-            feat = batch["points"].to(device)
-            coord = batch["coords"].to(device)
-            batch_idx = batch["batch"].to(device)
+            if "visible" in batch and "target_coords" in batch:
+                feat = batch["visible"].to(device)
+                coord = batch["visible_coords"].to(device)
+                batch_idx = batch["visible_batch"].to(device)
+                target = batch["target_coords"]
+            else:
+                feat = batch["points"].to(device)
+                coord = batch["coords"].to(device)
+                batch_idx = batch["batch"].to(device)
+                target = batch.get("target_coords", batch.get("coords"))
 
             output = model(feat, coord, batch_idx)
 
             if "xyz_pred" in output:
                 all_pred_xyz.append(output["xyz_pred"].cpu().numpy())
-            if "target_coords" in batch:
-                all_target_xyz.append(batch["target_coords"].numpy())
-            elif "coords" in batch:
-                all_target_xyz.append(batch["coords"].numpy())
+            if target is not None:
+                all_target_xyz.append(target.cpu().numpy())
+            if (
+                "rgb_pred" in output
+                and "rgb" in batch
+                and "mask" in batch
+                and target is not None
+            ):
+                target_rgb = batch["rgb"][batch["mask"]].to(device)
+                xyz_pred = output["xyz_pred"]
+                if target_rgb.shape[0] > 0 and xyz_pred.shape[0] > 0:
+                    nn_idx = torch.cdist(xyz_pred, target.to(device)).argmin(dim=1)
+                    all_pred_rgb.append(output["rgb_pred"].cpu().numpy())
+                    all_target_rgb.append(target_rgb[nn_idx].cpu().numpy())
 
     result = {}
     if all_pred_xyz:
         result["pred_xyz"] = np.concatenate(all_pred_xyz)
     if all_target_xyz:
         result["target_xyz"] = np.concatenate(all_target_xyz)
+    if all_pred_rgb:
+        result["pred_rgb"] = np.concatenate(all_pred_rgb)
+        result["target_rgb"] = np.concatenate(all_target_rgb)
     return result
 
 
@@ -253,11 +280,22 @@ def evaluate_seg_b(
         f"p90={ch['p90']:.4f} p99={ch['p99']:.4f}"
     )
 
-    return {
+    result = {
         "chamfer": ch,
         "height_error": he,
         "error_grid": eg,
     }
+
+    if "pred_rgb" in data and "target_rgb" in data:
+        cs = color_stats(data["pred_rgb"], data["target_rgb"])
+        result["color"] = cs
+        pc = cs["per_channel_mse"]
+        logger.info(
+            f"Color: mse={cs['mse']:.4f} mae={cs['mae']:.4f} psnr={cs['psnr']:.2f}dB "
+            f"(r={pc.get('r', 0):.4f} g={pc.get('g', 0):.4f} b={pc.get('b', 0):.4f})"
+        )
+
+    return result
 
 
 def evaluate_mae(

@@ -71,6 +71,9 @@ class SegAModel(nn.Module):
     ) -> dict[str, Tensor]:
         encoded = self.encoder(feat, coord, batch)
 
+        if self.use_rgb and rgb is None:
+            raise ValueError("use_rgb=True but rgb not provided to forward()")
+
         if self.use_rgb and rgb is not None:
             # Normalize to [0, 1] — handles both 0-255 and already-normalised inputs
             if rgb.max() > 1.0:

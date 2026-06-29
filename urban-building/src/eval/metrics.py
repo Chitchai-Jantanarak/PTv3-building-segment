@@ -192,6 +192,31 @@ def spatial_error_grid(
     }
 
 
+def color_stats(
+    pred_rgb: np.ndarray,
+    target_rgb: np.ndarray,
+) -> dict[str, float | dict[str, float]]:
+    pred = np.asarray(pred_rgb, dtype=np.float64)
+    target = np.asarray(target_rgb, dtype=np.float64)
+
+    if pred.max() > 1.5 or target.max() > 1.5:
+        pred = pred / 255.0
+        target = target / 255.0
+
+    pred = np.clip(pred, 0.0, 1.0)
+    target = np.clip(target, 0.0, 1.0)
+
+    se = (pred - target) ** 2
+    mse = float(se.mean())
+    mae = float(np.abs(pred - target).mean())
+    psnr = float(10.0 * np.log10(1.0 / mse)) if mse > 1e-12 else 99.0
+
+    channels = ["r", "g", "b"][: pred.shape[1]]
+    per_channel = {c: float(se[:, i].mean()) for i, c in enumerate(channels)}
+
+    return {"mse": mse, "mae": mae, "psnr": psnr, "per_channel_mse": per_channel}
+
+
 # ── MAE metrics ─────────────────────────────────────────────────────────
 
 def per_feature_mse(

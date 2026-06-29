@@ -505,6 +505,44 @@ def plot_error_by_value(
     _save_fig(fig, out_path)
 
 
+def plot_latent_pca(
+    xy: np.ndarray,
+    out_path: Path,
+    title: str = "Encoder Latent PCA (2D)",
+) -> None:
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.scatter(xy[:, 0], xy[:, 1], s=3, alpha=0.4, color="#4C72B0", rasterized=True)
+    ax.set_xlabel("PC1")
+    ax.set_ylabel("PC2")
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    _save_fig(fig, out_path)
+
+
+def plot_recon_error_dist(
+    recon_error: np.ndarray,
+    out_path: Path,
+    title: str = "Reconstruction Error Distribution",
+) -> None:
+    fig, ax = plt.subplots(figsize=(10, 5))
+    p99 = np.percentile(recon_error, 99)
+    ax.hist(recon_error[recon_error <= p99], bins=100, color="#4C72B0", alpha=0.8)
+    ax.axvline(
+        recon_error.mean(),
+        color="red",
+        linestyle="--",
+        linewidth=1.5,
+        label=f"mean={recon_error.mean():.4f}",
+    )
+    ax.set_xlabel("Per-point L2 error")
+    ax.set_ylabel("Count")
+    ax.set_title(title)
+    ax.legend()
+    ax.grid(axis="y", alpha=0.3)
+    _save_fig(fig, out_path)
+
+
 # ── Convenience ──────────────────────────────────────────────────────────
 
 def plot_all(
@@ -598,6 +636,16 @@ def plot_all(
         if "bins_data" in metrics:
             p = out_dir / "error_by_value.png"
             plot_error_by_value(metrics["bins_data"], p)
+            saved.append(p)
+
+        if "latent_pca" in metrics:
+            p = out_dir / "latent_pca.png"
+            plot_latent_pca(metrics["latent_pca"], p)
+            saved.append(p)
+
+        if "recon_error" in metrics:
+            p = out_dir / "recon_error_dist.png"
+            plot_recon_error_dist(metrics["recon_error"], p)
             saved.append(p)
 
         if "sample_3d" in metrics:

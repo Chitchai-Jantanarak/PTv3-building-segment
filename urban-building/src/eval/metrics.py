@@ -1,6 +1,4 @@
 # src/eval/metrics.py
-"""Evaluation metrics for all pipeline stages."""
-
 import numpy as np
 
 # ── Seg-A metrics ────────────────────────────────────────────────────────
@@ -30,6 +28,56 @@ def per_class_iou(cm: np.ndarray) -> np.ndarray:
     denom = tp + fp + fn
     iou = np.where(denom > 0, tp / denom, 0.0)
     return iou
+
+
+def overall_accuracy(cm: np.ndarray) -> float:
+    total = cm.sum()
+    return float(np.diag(cm).sum() / total) if total > 0 else 0.0
+
+
+def mean_accuracy(cm: np.ndarray) -> float:
+    tp = np.diag(cm)
+    row = cm.sum(axis=1)
+    acc = np.where(row > 0, tp / np.maximum(row, 1), 0.0)   # mean per-class recall
+    valid = row > 0
+    return float(acc[valid].mean()) if valid.any() else 0.0
+
+
+def _safe_div(num: np.ndarray, den: np.ndarray) -> np.ndarray:
+    num = np.asarray(num, dtype=np.float64)
+    den = np.asarray(den, dtype=np.float64)
+    out = np.zeros(np.broadcast(num, den).shape, dtype=np.float64)
+    np.divide(num, den, out=out, where=den > 0)   # 0 where den==0
+    return out
+
+
+def precision_recall_f1(cm: np.ndarray) -> dict[str, np.ndarray | float]:
+    tp = np.diag(cm).astype(np.float64)
+    fp = cm.sum(axis=0) - tp
+    fn = cm.sum(axis=1) - tp
+    precision = _safe_div(tp, tp + fp)
+    recall = _safe_div(tp, tp + fn)
+    f1 = _safe_div(2 * precision * recall, precision + recall)
+    return {
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "macro_precision": float(precision.mean()),
+        "macro_recall": float(recall.mean()),
+        "macro_f1": float(f1.mean()),
+    }
+
+
+def freq_weighted_iou(cm: np.ndarray) -> float:
+    iou = per_class_iou(cm)
+    total = cm.sum()
+    freq = cm.sum(axis=1) / max(total, 1)
+    return float((freq * iou).sum())          # sum_c freq_c * IoU_c
+
+
+def normalize_confusion(cm: np.ndarray) -> np.ndarray:
+    row = cm.sum(axis=1, keepdims=True)
+    return np.where(row > 0, cm / np.maximum(row, 1), 0.0)   # rows sum to 1
 
 
 def boundary_iou(
@@ -85,37 +133,67 @@ def boundary_iou(
 # ── Seg-B / inpainting metrics ──────────────────────────────────────────
 
 
+def nn_distances(
+    pred_xyz: np.ndarray,
+    target_xyz: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    from scipy.spatial import cKDTree
+
+    pred = np.asarray(pred_xyz, dtype=np.float64)
+    target = np.asarray(target_xyz, dtype=np.float64)
+    forward, _ = cKDTree(target).query(pred)    # pred[i]   -> nearest target
+    backward, _ = cKDTree(pred).query(target)   # target[j] -> nearest pred
+    return forward, backward
+
+
 def chamfer_stats(
     pred_xyz: np.ndarray,
     target_xyz: np.ndarray,
 ) -> dict[str, float | np.ndarray]:
-    """Per-point chamfer distances and summary stats.
+    forward, backward = nn_distances(pred_xyz, target_xyz)
+    return chamfer_stats_from_nn(forward, backward)
 
-    Returns dict with keys: distances, mean, median, p90, p99, max.
-    """
-    diff = pred_xyz - target_xyz
-    dists = np.linalg.norm(diff, axis=-1)
+
+def chamfer_stats_from_nn(
+    forward: np.ndarray,
+    backward: np.ndarray,
+) -> dict[str, float | np.ndarray]:
+    distances = np.concatenate([forward, backward])
     return {
-        "distances": dists,
-        "mean": float(dists.mean()),
-        "median": float(np.median(dists)),
-        "p90": float(np.percentile(dists, 90)),
-        "p99": float(np.percentile(dists, 99)),
-        "max": float(dists.max()),
+        "distances": distances,
+        "mean": float(distances.mean()),
+        "median": float(np.median(distances)),
+        "p90": float(np.percentile(distances, 90)),
+        "p99": float(np.percentile(distances, 99)),
+        "max": float(distances.max()),
+        "forward_mean": float(forward.mean()),
+        "backward_mean": float(backward.mean()),
+        "chamfer": float(forward.mean() + backward.mean()),
+        "hausdorff": float(max(forward.max(), backward.max())),
+        "hausdorff_p95": float(
+            max(np.percentile(forward, 95), np.percentile(backward, 95))
+        ),
     }
 
 
+def fscore_at_tau(
+    forward: np.ndarray,
+    backward: np.ndarray,
+    tau: float = 0.2,
+) -> dict[str, float]:
+    precision = float((forward < tau).mean())   # frac pred within tau of a target
+    recall = float((backward < tau).mean())     # frac target within tau of a pred
+    denom = precision + recall
+    f1 = float(2 * precision * recall / denom) if denom > 0 else 0.0
+    return {"tau": float(tau), "precision": precision, "recall": recall, "f1": f1}
+
+
 def height_wise_error(
-    pred_xyz: np.ndarray,
-    target_xyz: np.ndarray,
+    dists: np.ndarray,
+    coords: np.ndarray,
     n_bins: int = 20,
 ) -> dict[str, np.ndarray]:
-    """Reconstruction error binned by Z coordinate.
-
-    Returns dict with keys: bin_centers, mean_error, std_error, counts.
-    """
-    dists = np.linalg.norm(pred_xyz - target_xyz, axis=-1)
-    z = target_xyz[:, 2]
+    z = coords[:, 2]
 
     z_min, z_max = z.min(), z.max()
     if z_max - z_min < 1e-6:
@@ -151,16 +229,11 @@ def height_wise_error(
 
 
 def spatial_error_grid(
-    pred_xyz: np.ndarray,
-    target_xyz: np.ndarray,
+    dists: np.ndarray,
+    coords: np.ndarray,
     grid_res: float = 1.0,
 ) -> dict[str, np.ndarray]:
-    """2D XY error heatmap — mean reconstruction error per grid cell.
-
-    Returns dict with keys: grid, x_edges, y_edges, x_centers, y_centers.
-    """
-    dists = np.linalg.norm(pred_xyz - target_xyz, axis=-1)
-    x, y = target_xyz[:, 0], target_xyz[:, 1]
+    x, y = coords[:, 0], coords[:, 1]
 
     x_min, x_max = x.min(), x.max()
     y_min, y_max = y.min(), y.max()
@@ -192,6 +265,31 @@ def spatial_error_grid(
     }
 
 
+def _srgb_to_lab(rgb: np.ndarray) -> np.ndarray:   # sRGB[0,1] -> CIE Lab (D65)
+    rgb = np.clip(rgb, 0.0, 1.0)
+    linear = np.where(rgb <= 0.04045, rgb / 12.92, ((rgb + 0.055) / 1.055) ** 2.4)
+
+    m = np.array(
+        [
+            [0.4124564, 0.3575761, 0.1804375],
+            [0.2126729, 0.7151522, 0.0721750],
+            [0.0193339, 0.1191920, 0.9503041],
+        ]
+    )
+    xyz = linear @ m.T
+    white = np.array([0.95047, 1.0, 1.08883])
+    xyz = xyz / white
+
+    eps = 216.0 / 24389.0
+    kappa = 24389.0 / 27.0
+    f = np.where(xyz > eps, np.cbrt(xyz), (kappa * xyz + 16.0) / 116.0)
+
+    L = 116.0 * f[:, 1] - 16.0
+    a = 500.0 * (f[:, 0] - f[:, 1])
+    b = 200.0 * (f[:, 1] - f[:, 2])
+    return np.stack([L, a, b], axis=1)
+
+
 def color_stats(
     pred_rgb: np.ndarray,
     target_rgb: np.ndarray,
@@ -214,7 +312,18 @@ def color_stats(
     channels = ["r", "g", "b"][: pred.shape[1]]
     per_channel = {c: float(se[:, i].mean()) for i, c in enumerate(channels)}
 
-    return {"mse": mse, "mae": mae, "psnr": psnr, "per_channel_mse": per_channel}
+    delta_e = float("nan")
+    if pred.shape[1] >= 3:
+        de = np.linalg.norm(_srgb_to_lab(pred[:, :3]) - _srgb_to_lab(target[:, :3]), axis=1)
+        delta_e = float(de.mean())
+
+    return {
+        "mse": mse,
+        "mae": mae,
+        "psnr": psnr,
+        "delta_e": delta_e,
+        "per_channel_mse": per_channel,
+    }
 
 
 # ── MAE metrics ─────────────────────────────────────────────────────────

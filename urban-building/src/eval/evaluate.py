@@ -11,16 +11,23 @@ from torch.utils.data import DataLoader
 from src.core.utils import get_logger
 from src.eval.metrics import (
     boundary_iou,
-    chamfer_stats,
+    chamfer_stats_from_nn,
     color_stats,
     confusion_matrix,
     error_by_value_bins,
+    freq_weighted_iou,
+    fscore_at_tau,
     height_wise_error,
+    mean_accuracy,
+    nn_distances,
+    normalize_confusion,
+    overall_accuracy,
     per_class_iou,
     per_feature_bias,
     per_feature_mse,
     per_feature_r2,
     per_feature_rmse,
+    precision_recall_f1,
     spatial_error_grid,
 )
 from src.eval.plots import plot_all
@@ -73,10 +80,9 @@ def _collect_seg_b_predictions(
     dataloader: DataLoader,
     device: torch.device,
 ) -> dict[str, np.ndarray]:
-    """Run Seg-B model on dataloader, collect predictions + targets."""
+    # geometry kept per-scene (chamfer needs within-scene NN); color pools safely
     model.eval()
-    all_pred_xyz = []
-    all_target_xyz = []
+    scenes: list[tuple[np.ndarray, np.ndarray]] = []
     all_pred_rgb = []
     all_target_rgb = []
 
@@ -95,10 +101,12 @@ def _collect_seg_b_predictions(
 
             output = model(feat, coord, batch_idx)
 
-            if "xyz_pred" in output:
-                all_pred_xyz.append(output["xyz_pred"].cpu().numpy())
-            if target is not None:
-                all_target_xyz.append(target.cpu().numpy())
+            if "xyz_pred" in output and target is not None:
+                pred_np = output["xyz_pred"].cpu().numpy()
+                target_np = target.cpu().numpy()
+                if len(pred_np) > 0 and len(target_np) > 0:
+                    scenes.append((pred_np, target_np))
+
             if (
                 "rgb_pred" in output
                 and "rgb" in batch
@@ -108,15 +116,12 @@ def _collect_seg_b_predictions(
                 target_rgb = batch["rgb"][batch["mask"]].to(device)
                 xyz_pred = output["xyz_pred"]
                 if target_rgb.shape[0] > 0 and xyz_pred.shape[0] > 0:
+                    # match each pred to nearest target, compare colors (per scene)
                     nn_idx = torch.cdist(xyz_pred, target.to(device)).argmin(dim=1)
                     all_pred_rgb.append(output["rgb_pred"].cpu().numpy())
                     all_target_rgb.append(target_rgb[nn_idx].cpu().numpy())
 
-    result = {}
-    if all_pred_xyz:
-        result["pred_xyz"] = np.concatenate(all_pred_xyz)
-    if all_target_xyz:
-        result["target_xyz"] = np.concatenate(all_target_xyz)
+    result: dict[str, object] = {"scenes": scenes}
     if all_pred_rgb:
         result["pred_rgb"] = np.concatenate(all_pred_rgb)
         result["target_rgb"] = np.concatenate(all_target_rgb)
@@ -229,16 +234,36 @@ def evaluate_seg_a(
 
     cm = confusion_matrix(preds, labels, num_classes)
     iou = per_class_iou(cm)
+    prf = precision_recall_f1(cm)
+    support = cm.sum(axis=1)
 
     metrics = {
         "confusion_matrix": cm,
+        "confusion_matrix_normalized": normalize_confusion(cm),
         "per_class_iou": iou,
         "mean_iou": float(iou.mean()),
+        "overall_accuracy": overall_accuracy(cm),
+        "mean_accuracy": mean_accuracy(cm),
+        "fw_iou": freq_weighted_iou(cm),
+        "per_class_precision": prf["precision"],
+        "per_class_recall": prf["recall"],
+        "per_class_f1": prf["f1"],
+        "macro_precision": prf["macro_precision"],
+        "macro_recall": prf["macro_recall"],
+        "macro_f1": prf["macro_f1"],
+        "support": support,
     }
 
-    logger.info(f"mIoU: {iou.mean():.4f}")
+    logger.info(
+        f"mIoU={iou.mean():.4f} OA={metrics['overall_accuracy']:.4f} "
+        f"mAcc={metrics['mean_accuracy']:.4f} FW-IoU={metrics['fw_iou']:.4f} "
+        f"macro-F1={prf['macro_f1']:.4f}"
+    )
     for i, name in enumerate(class_names):
-        logger.info(f"  {name:20s}: IoU={iou[i]:.4f}")
+        logger.info(
+            f"  {name:20s}: IoU={iou[i]:.4f} P={prf['precision'][i]:.4f} "
+            f"R={prf['recall'][i]:.4f} F1={prf['f1'][i]:.4f} n={int(support[i])}"
+        )
 
     if compute_boundary and len(coords) < 500_000:
         logger.info("Computing boundary IoU (may take a moment)...")
@@ -255,33 +280,58 @@ def evaluate_seg_b(
     device: torch.device,
     out_dir: Path,
     grid_res: float = 1.0,
+    tau: float = 0.2,
 ) -> dict:
-    """Full Seg-B evaluation: chamfer stats, height error, spatial heatmap."""
     logger.info("Evaluating Seg-B on validation set...")
     data = _collect_seg_b_predictions(model, val_loader, device)
 
-    if "pred_xyz" not in data or "target_xyz" not in data:
-        logger.warning("Missing predictions or targets — skipping Seg-B evaluation")
+    scenes = data.get("scenes", [])
+    if not scenes:
+        logger.warning("No predictions/targets — skipping Seg-B evaluation")
         return {}
 
-    pred = data["pred_xyz"]
-    target = data["target_xyz"]
+    fwd_all, bwd_all, bwd_coord_all = [], [], []
+    prec, rec = [], []
+    for pred, target in scenes:
+        forward, backward = nn_distances(pred, target)
+        fwd_all.append(forward)
+        bwd_all.append(backward)
+        bwd_coord_all.append(target)
+        fs = fscore_at_tau(forward, backward, tau=tau)
+        prec.append(fs["precision"])
+        rec.append(fs["recall"])
 
-    # Align lengths (in case of batch size mismatch)
-    n = min(len(pred), len(target))
-    pred, target = pred[:n], target[:n]
+    forward = np.concatenate(fwd_all)
+    backward = np.concatenate(bwd_all)
+    bwd_coord = np.concatenate(bwd_coord_all)
 
-    ch = chamfer_stats(pred, target)
-    he = height_wise_error(pred, target)
-    eg = spatial_error_grid(pred, target, grid_res=grid_res)
+    ch = chamfer_stats_from_nn(forward, backward)
+    he = height_wise_error(backward, bwd_coord)
+    eg = spatial_error_grid(backward, bwd_coord, grid_res=grid_res)
+
+    precision = float(np.mean(prec))
+    recall = float(np.mean(rec))
+    denom = precision + recall
+    fscore = {
+        "tau": float(tau),
+        "precision": precision,
+        "recall": recall,
+        "f1": float(2 * precision * recall / denom) if denom > 0 else 0.0,
+    }
 
     logger.info(
-        f"Chamfer: mean={ch['mean']:.4f} median={ch['median']:.4f} "
-        f"p90={ch['p90']:.4f} p99={ch['p99']:.4f}"
+        f"Chamfer: sym_mean={ch['mean']:.4f} CD={ch['chamfer']:.4f} "
+        f"fwd={ch['forward_mean']:.4f} bwd={ch['backward_mean']:.4f} "
+        f"hausdorff_p95={ch['hausdorff_p95']:.4f}"
+    )
+    logger.info(
+        f"F-score@{tau}: P={precision:.4f} R={recall:.4f} F1={fscore['f1']:.4f} "
+        f"(over {len(scenes)} scenes)"
     )
 
     result = {
         "chamfer": ch,
+        "fscore": fscore,
         "height_error": he,
         "error_grid": eg,
     }
@@ -332,21 +382,105 @@ def evaluate_mae(
             idx = feature_names.index(feat)
             bins_data[feat] = error_by_value_bins(pred, target, idx)
 
+    # Group summary: geom / rgb / intensity
+    groups = {
+        "geom": ["x", "y", "z", "rel_z"],
+        "rgb": ["r", "g", "b"],
+        "intensity": ["intensity"],
+    }
+    group_mse = {}
+    for g, members in groups.items():
+        idxs = [names.index(n) for n in members if n in names]
+        if idxs:
+            group_mse[g] = float(((pred[:, idxs] - target[:, idxs]) ** 2).mean())
+    for g, v in group_mse.items():
+        logger.info(f"  group {g:9s}: MSE={v:.4f}")
+
+    recon_error = np.linalg.norm(pred - target, axis=1)   # per-point L2
+
+    latent_pca = None   # 2D PCA of stashed sample encodings
+    sample = data.get("sample")
+    if sample is not None and "encoded" in sample:
+        enc = np.asarray(sample["encoded"], dtype=np.float64)
+        if enc.shape[0] >= 3 and enc.shape[1] >= 2:
+            centered = enc - enc.mean(axis=0, keepdims=True)
+            _, _, vt = np.linalg.svd(centered, full_matrices=False)
+            latent_pca = centered @ vt[:2].T
+
     result = {
         "feature_mse":  fm,
         "feature_rmse": frm,
         "feature_bias": fb,
         "feature_r2":   fr2,
+        "group_mse":    group_mse,
+        "recon_error":  recon_error,
         "bins_data":    bins_data,
         "pred":         pred,
         "target":       target,
         "feature_names": names,
     }
+    if latent_pca is not None:
+        result["latent_pca"] = latent_pca
     if "sample" in data:
         sample = data["sample"]
         sample["feature_names"] = names
         result["sample_3d"] = sample
     return result
+
+
+def evaluate_hazus(
+    model: torch.nn.Module,
+    val_loader: DataLoader,
+    device: torch.device,
+    num_classes: int,
+) -> dict:
+    logger.info("Evaluating HAZUS on validation set...")
+    model.eval()
+    all_preds = []
+    all_labels = []
+
+    with torch.no_grad():
+        for batch in val_loader:
+            if "labels" not in batch or batch["labels"] is None:
+                continue
+            xyz = batch["coords"].to(device)
+            batch_idx = batch["batch"].to(device)
+            mae_errors = batch.get("mae_errors")
+            if mae_errors is not None:
+                mae_errors = mae_errors.to(device)
+
+            output = model(xyz, batch_idx, mae_errors)
+            preds = output.get("predictions")
+            if preds is None:
+                preds = torch.argmax(output["logits"], dim=-1)
+            all_preds.append(preds.cpu().numpy())
+            all_labels.append(batch["labels"].cpu().numpy())
+
+    if not all_preds:
+        logger.warning("No labels in HAZUS validation data — skipping evaluation")
+        return {}
+
+    preds = np.concatenate(all_preds)
+    labels = np.concatenate(all_labels)
+
+    cm = confusion_matrix(preds, labels, num_classes)
+    prf = precision_recall_f1(cm)
+    metrics = {
+        "confusion_matrix": cm,
+        "confusion_matrix_normalized": normalize_confusion(cm),
+        "overall_accuracy": overall_accuracy(cm),
+        "mean_accuracy": mean_accuracy(cm),
+        "macro_precision": prf["macro_precision"],
+        "macro_recall": prf["macro_recall"],
+        "macro_f1": prf["macro_f1"],
+        "per_class_f1": prf["f1"],
+        "support": cm.sum(axis=1),
+    }
+    logger.info(
+        f"HAZUS: OA={metrics['overall_accuracy']:.4f} "
+        f"mAcc={metrics['mean_accuracy']:.4f} macro-F1={prf['macro_f1']:.4f}"
+    )
+    return metrics
 
 def run_evaluation(
     task: str,
@@ -406,12 +540,18 @@ def run_evaluation(
         metrics.update(seg_metrics)
 
     elif task in ("seg_b_geom", "seg_b_color"):
-        seg_b_metrics = evaluate_seg_b(model, val_loader, device, out_dir)
+        tau = float(cfg.task.get("eval_fscore_tau", 0.2)) if cfg else 0.2
+        seg_b_metrics = evaluate_seg_b(model, val_loader, device, out_dir, tau=tau)
         metrics.update(seg_b_metrics)
 
     elif task == "mae":
         mae_metrics = evaluate_mae(model, val_loader, device, out_dir)
         metrics.update(mae_metrics)
+
+    elif task == "hazus":
+        num_classes = getattr(getattr(model, "codebook", None), "num_classes", 0)
+        if num_classes:
+            metrics.update(evaluate_hazus(model, val_loader, device, num_classes))
 
     # Generate plots
     plot_dir = out_dir / "plots"
@@ -422,4 +562,47 @@ def run_evaluation(
         for p in saved:
             logger.info(f"  {p.name}")
 
+    _save_metrics_json(metrics, out_dir / "metrics.json")
+
     return metrics
+
+
+def _json_safe(value: object, key: str = "") -> object:
+    import numpy as _np
+
+    # drop big per-point arrays; keep scalars + small arrays
+    skip = {"pred", "target", "coords", "distances", "recon_error",
+            "pred_rgb", "target_rgb", "latent_pca", "sample", "sample_3d"}
+    if key in skip:
+        return None
+
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            sv = _json_safe(v, k)
+            if sv is not None:
+                out[k] = sv
+        return out
+    if isinstance(value, (_np.floating, _np.integer)):
+        return value.item()
+    if isinstance(value, _np.ndarray):
+        if value.size > 1024:
+            return {"_shape": list(value.shape), "_dtype": str(value.dtype)}
+        return value.tolist()
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _save_metrics_json(metrics: dict, path: Path) -> None:
+    import json
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    safe = {k: _json_safe(v, k) for k, v in metrics.items()}
+    safe = {k: v for k, v in safe.items() if v is not None}
+    with open(path, "w") as f:
+        json.dump(safe, f, indent=2)
+    logger.info(f"Saved metrics to {path}")

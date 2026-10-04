@@ -1,0 +1,81 @@
+# Weak-label contract v1 (2026-09-14). Thresholds DERIVED and PROVEN on SensatUrban val tiles cambridge_block_32 and _17.
+# Implementation: scripts/overseg_sensat_check.py --rules v1 --cmax 0.01 --theta 8. Results: output/overseg_check/*_v1d.json, mirrored to chitchai:ptv3/20260914-wayfinder-pocs/.
+# Output per point: building | ground | other | ignore. Ignore leaves the loss.
+
+version: 1
+proven_on: [cambridge_block_32, cambridge_block_17]
+
+# --- over-segmentation (region growing as edge-filtered graph, connected components)
+overseg:
+  voxel_m: 0.2
+  k: 16
+  edge_keep: {normal_angle_deg_max: 8, curvature_max_both_ends: 0.03, dz_max_m: 0.5, edge_len_max_m: 1.0}
+  seed_curvature_max: 0.01              # a component survives only if it holds a point with curvature <= this
+  min_segment_pts: 30
+  measured: {purity_3class: [0.987, 0.991], coverage: [0.525, 0.536], pts_in_segments_below_0.9: [0.017, 0.011]}
+  decision: "region growing sufficient (Q4 = c). Hierarchical cut-pursuit not needed."
+
+# --- segment features (median over segment unless noted)
+features: [planarity, linearity, scattering, verticality, curvature, rel_z_med, rel_z_p95, area_bbox_m2, adjacency, edge_drop]
+edge_drop: "fraction of a segment's boundary points (cap 150) whose 3 m horizontal ball contains points >= 1.5 m lower; separates roofs (drop) from elevated ground (no drop)"
+
+# --- Sensat 13 -> 3 collapse used ONLY for the precision check
+sensat_collapse: {ground: [0, 5, 7, 10], building: [2, 3], other: [1, 4, 6, 8, 9, 11, 12]}
+
+# --- rules, segment level. precision_pts = point-weighted precision vs collapsed real labels, [tile32, tile17]
+rules:
+  - id: ground
+    class: ground
+    if: {planarity: ">= 0.45", verticality: "<= 0.15", curvature: "<= 0.02", rel_z_med: "<= 0.30"}
+    precision_pts: [1.000, 1.000]
+    decision: keep
+  - id: roof
+    class: building
+    if: {planarity: ">= 0.45", verticality: "<= 0.40", curvature: "<= 0.03", rel_z_med: ">= 2.0", area_bbox_m2: ">= 6", edge_drop: ">= 0.05"}
+    precision_pts: [0.993, 0.989]
+    decision: keep
+    note: "without edge_drop: 0.994 / 0.868 (elevated ground leaks in on tile 17)"
+  - id: wall
+    class: building
+    if: {verticality: ">= 0.75", rel_z_p95: ">= 2.0", adjacency: "touches a roof segment"}
+    precision_pts: [1.000, 0.997]
+    decision: keep
+  - id: elevated_ground
+    class: ground
+    if: {planarity: ">= 0.45", verticality: "<= 0.15", curvature: "<= 0.02", rel_z_med: ">= 2.0", area_bbox_m2: ">= 50", edge_drop: "< 0.02"}
+    precision_pts: [null, 0.926]
+    decision: adjust            # keep with conf 0.8; revisit on a tile with a real bridge
+  - id: vehicle
+    decision: dropped           # 0.29-0.63 precision in every variant; building fragments look identical
+  - id: bridge_deck
+    decision: dropped           # fired on large flat roofs, precision 0.0
+  - id: pole_line
+    decision: dropped           # 0.0 precision, too few segments to matter
+  - id: vegetation_segment
+    decision: dropped           # scattered points never form segments under the curvature gate; unreachable
+
+# --- point-level residual rule (applies ONLY to points in no segment)
+residual_rules:
+  - id: vegetation_rgb
+    class: other
+    if: {in_segment: false, curvature: ">= 0.03", rel_z: ">= 0.5", excess_green: ">= 0.20"}   # ExG = 2G - R - B on [0,1] RGB
+    precision_pts: [0.898, 0.910]
+    recall_of_other: [0.123, 0.385]
+    decision: keep
+    note: "geometry-only residual tops out at 0.54 precision (tested loose/tight/very_tight); RGB is required for other. Sources without RGB: other stays ignore."
+
+decide:
+  building: "roof or wall fires, no ground rule fires"
+  ground:   "ground or elevated_ground fires, no building rule fires"
+  other:    "vegetation_rgb fires (residual points only)"
+  ignore:   "everything else: no rule, conflicting rules, segment < 30 pts, unassigned without greenness"
+
+measured_teacher:
+  # before residual rule (segments only)
+  tile32: {coverage_pts: 0.438, accuracy_on_covered: 0.987, building_precision: 0.994, building_recall_of_covered: 0.997}
+  tile17: {coverage_pts: 0.438, accuracy_on_covered: 0.983, building_precision: 0.982, building_recall_of_covered: 0.981}
+  # with vegetation_rgb: coverage rises by ~2.5 % (tile32) / ~7 % (tile17) of points, other precision 0.90-0.91
+
+next:
+  - "Run A/B/C probe: A = real collapsed labels, B = this teacher, C = teacher + 1 self-training round. Same frozen 0617 encoder, same 3-class head. Building IoU on val is the number."
+  - "Thai transfer: re-derive rel_z and area thresholds per corpus when drone/ALS exists; ExG threshold re-derived from each corpus' RGB histogram."

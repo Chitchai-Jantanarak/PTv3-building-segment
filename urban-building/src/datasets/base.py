@@ -101,6 +101,43 @@ class BasePointCloudDataset(Dataset, ABC):
 
         return data
 
+    def _resolve_labels(self, raw_data, file_path: Path) -> np.ndarray | None:
+        # label_key: "labels" (default, class_mapping + optional label_collapse applied)
+        #            or a teacher key, e.g. "labels3_teacher" (looked up in the npz, else sidecar <stem>.<key>.npy; used as-is)
+        label_key = getattr(self, "label_key", None) or "labels"
+        labels_raw = None
+        if label_key in raw_data:
+            labels_raw = raw_data[label_key]
+        elif label_key != "labels":
+            side = file_path.with_name(f"{file_path.stem}.{label_key}.npy")
+            if side.exists():
+                labels_raw = np.load(side)
+            else:
+                logger.warning(f"label_key '{label_key}' missing for {file_path.name} (no sidecar {side.name}); sample has no labels")
+        if labels_raw is None:
+            return None
+        labels = np.asarray(labels_raw, dtype=np.int64)
+        if label_key == "labels":
+            if self.class_mapping is not None:
+                new_labels = np.full_like(labels, self.ignore_index)
+                for old_label, new_label in self.class_mapping.items():
+                    new_labels[labels == old_label] = new_label
+                labels = new_labels
+            collapse = getattr(self, "label_collapse", None)
+            if collapse:
+                new_labels = np.full_like(labels, self.ignore_index)
+                for old_label, new_label in collapse.items():
+                    new_labels[labels == int(old_label)] = int(new_label)
+                labels = new_labels
+        return labels
+
+    def _load_labels_only(self, file_path: Path) -> np.ndarray | None:
+        if file_path.suffix == ".npz":
+            raw = np.load(file_path, allow_pickle=True)
+        else:
+            raw = torch.load(file_path, map_location="cpu", weights_only=False)
+        return self._resolve_labels(raw, file_path)
+
     def _load_sample(self, file_path: Path) -> dict[str, np.ndarray]:
         try:
             if file_path.suffix == ".npz":
@@ -122,18 +159,9 @@ class BasePointCloudDataset(Dataset, ABC):
             "file_path": str(file_path),
         }
 
-        if "labels" in raw_data:
-            labels_raw = raw_data["labels"]
-            if labels_raw is not None:
-                labels = np.asarray(labels_raw, dtype=np.int64)
-
-                if self.class_mapping is not None:
-                    new_labels = np.full_like(labels, self.ignore_index)
-                    for old_label, new_label in self.class_mapping.items():
-                        new_labels[labels == old_label] = new_label
-                    labels = new_labels
-
-                data["labels"] = labels
+        labels = self._resolve_labels(raw_data, file_path)
+        if labels is not None:
+            data["labels"] = labels
 
         if "instance" in raw_data:
             inst = raw_data["instance"]
@@ -267,25 +295,11 @@ class BasePointCloudDataset(Dataset, ABC):
 
         for idx in range(len(self)):
             file_path = self.file_list[idx]
-            if file_path.suffix == ".npz":
-                data = np.load(file_path, allow_pickle=True)
-            else:
-                data = torch.load(file_path, map_location="cpu", weights_only=False)
-
-            if "labels" in data and data["labels"] is not None:
-                labels = np.asarray(data["labels"])
-
-                if self.class_mapping is not None:
-                    mapped = np.full_like(labels, -1)
-                    for old_label, new_label in self.class_mapping.items():
-                        mapped[labels == old_label] = new_label
-                    labels = mapped
-
-                labels = labels[labels >= 0]
-                labels = labels[labels < self.num_classes]
-
-                for label in labels:
-                    label_counts[label] += 1
+            labels = self._load_labels_only(file_path)
+            if labels is None:
+                continue
+            labels = labels[(labels >= 0) & (labels < self.num_classes)]
+            label_counts += np.bincount(labels, minlength=self.num_classes)[: self.num_classes]
 
         total = label_counts.sum()
 

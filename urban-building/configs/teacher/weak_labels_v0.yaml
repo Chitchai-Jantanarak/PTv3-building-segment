@@ -1,0 +1,95 @@
+# Weak-label contract v0 (2026-09-14). Segment-level teacher for SEG-A+.
+# Unit = over-segmentation segment (region growing on kNN-covariance features). Never raw points.
+# Output per segment: building | ground | other | ignore. Broadcast to points. Ignore points leave the loss.
+# Thresholds are v0 placeholders; v1 derives them per corpus (see `derive`). Structure is fixed, parameters are not.
+
+version: 0
+unit: segment
+min_segment_pts: 30                 # below this the covariance is noise -> ignore
+
+# --- features per segment (from the over-seg pass; all from one 3x3 covariance per point, aggregated)
+features:
+  planarity:   median (l2 - l3) / l1
+  linearity:   median (l1 - l2) / l1
+  scattering:  median l3 / l1
+  verticality: median 1 - |normal_z|
+  rel_z_med:   median height above DEM, m
+  rel_z_max:   p95 height above DEM, m
+  area_m2:     footprint of segment's 2D convex hull
+  n_pts:       point count
+  adj:         set of adjacent segment ids (shared kNN edges)
+
+# --- class collapse used ONLY for the precision check on SensatUrban real labels (13 -> 3)
+sensat_collapse:
+  ground:   [0, 5, 7, 10]           # ground, parking, traffic road, footpath
+  building: [2, 3]                  # building, wall
+  other:    [1, 4, 6, 8, 9, 11, 12] # high veg, bridge, rail, street furniture, car, bike, water
+
+# --- rules. Each fires independently; `decide` resolves conflicts. conf = prior belief, replaced by measured precision in v1.
+rules:
+  - id: ground
+    class: ground
+    conf: 0.95
+    if: {planarity: ">= 0.70", verticality: "<= 0.20", rel_z_med: "<= 0.30"}
+
+  - id: roof
+    class: building
+    conf: 0.90
+    if: {planarity: ">= 0.60", verticality: "<= 0.40", rel_z_med: ">= 2.0", area_m2: ">= 6"}
+
+  - id: wall
+    class: building
+    conf: 0.85
+    if: {planarity: ">= 0.50", verticality: ">= 0.80", rel_z_max: ">= 2.0", adj: "touches roof"}
+
+  - id: vegetation
+    class: other
+    conf: 0.85
+    if: {scattering: ">= 0.15", planarity: "<= 0.35", rel_z_med: ">= 0.5"}
+
+  - id: vehicle
+    class: other
+    conf: 0.70
+    if: {planarity: ">= 0.40", rel_z_med: ">= 0.4", rel_z_max: "<= 3.0", area_m2: "<= 15"}
+
+  - id: bridge_deck
+    class: other
+    conf: 0.70
+    if: {planarity: ">= 0.70", verticality: "<= 0.20", rel_z_med: ">= 2.0", area_m2: ">= 200", adj: "no wall below"}
+
+  - id: pole_line
+    class: other
+    conf: 0.75
+    if: {linearity: ">= 0.80", rel_z_max: ">= 2.0"}
+
+decide:
+  positive_building: "roof or wall fires with conf >= 0.85, and no other-class rule fires"
+  ground:            "ground fires, no other rule fires"
+  other:             "any other-class rule fires with conf >= 0.70, no building rule fires"
+  ignore:            "no rule fires, or rules of two classes fire, or n_pts < min_segment_pts"
+  expected_coverage: "0.50 - 0.70 of points labelled; the rest ignore. Purity over coverage."
+
+# --- v1: derive thresholds from the corpus, no labels
+derive:
+  rel_z_ground_max:   "valley after the first mode of the rel_z histogram, per corpus"
+  rel_z_building_min: "2.0 urban default; 1.5 where stilt houses dominate (rel_z bimodal below 2)"
+  planarity_min:      "70th percentile of segment planarity over segments with n_pts >= min_segment_pts"
+  area_thresholds:    "from the segment-area distribution: roof >= p40, vehicle <= p10"
+  sanity:             "building share of points 15-40% urban, 3-10% rural; off by 3x means a threshold is wrong"
+
+# --- proof protocol on SensatUrban (labels exist): report per rule, keep/adjust/drop
+precision_check:
+  per_rule: "precision = segments where rule fires AND majority collapsed label == rule.class / segments where rule fires"
+  keep_if: "precision >= 0.90"
+  adjust_if: "0.75 <= precision < 0.90 -> tighten the weakest threshold, re-run"
+  drop_if: "precision < 0.75 after one adjustment"
+  also_report: "building recall at segment level; overall coverage; ignore share per class"
+  artifact: "rule -> fires -> precision -> decision table, one row per rule, kept with the config version"
+
+# --- v2 self-training guardrails (only after v1 passes on Sensat)
+self_training:
+  rounds_max: 2
+  rule_veto: "student label accepted only where no rule contradicts it"
+  two_view: "point enters loss only if rule and student agree or one abstains"
+  drift_alarm: "Building IoU on Sensat real labels must not drop between rounds; if it drops, stop"
+  never_train_on: [osm_tags, provider_class_6]   # context/validation sources stay out of the loss

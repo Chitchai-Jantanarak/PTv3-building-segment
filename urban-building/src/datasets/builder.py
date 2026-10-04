@@ -317,11 +317,19 @@ class SegADataset(BasePointCloudDataset):
         self,
         root: str | Path,
         dataset_type: str = "sensat",  # sensat | whu
+        label_key: str | None = None,          # None -> "labels"; else e.g. "labels3_teacher" (npz key or <stem>.<key>.npy sidecar)
+        label_collapse: dict | None = None,    # applied to real labels only, e.g. {0:0,5:0,7:0,10:0,2:1,3:1,...}
+        class_names: dict | None = None,       # override class id -> name (sets num_classes)
         **kwargs,
     ):
         self.dataset_type = dataset_type
+        self.label_key = label_key
+        self.label_collapse = {int(k): int(v) for k, v in dict(label_collapse).items()} if label_collapse else None
 
-        if dataset_type == "sensat":
+        if class_names:
+            self._class_names = {int(k): str(v) for k, v in dict(class_names).items()}
+            self._num_classes = len(self._class_names)
+        elif dataset_type == "sensat":
             self._class_names = SensatUrbanDataset.CLASSES
             self._num_classes = SensatUrbanDataset.NUM_CLASSES
         elif dataset_type == "whu":
@@ -624,6 +632,12 @@ def build_dataset(
     elif task in ["seg_a"]:
         dataset_cls = get_dataset_class("seg_a")
         kwargs["dataset_type"] = data_cfg.get("name", "sensat")
+        for k in ("label_key", "label_collapse", "class_names"):
+            v = task_cfg.get(k, None)
+            if v is not None:
+                kwargs[k] = v
+        if split != "train" and task_cfg.get("val_label_key", None) is not None:
+            kwargs["label_key"] = task_cfg.get("val_label_key")   # e.g. train on round-1 sidecars, select on pure teacher sidecars
 
     elif task in ["seg_b", "seg_b_geom", "seg_b_color"]:
         dataset_cls = get_dataset_class("seg_b")

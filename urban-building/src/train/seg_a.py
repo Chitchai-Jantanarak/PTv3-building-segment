@@ -89,6 +89,28 @@ def train_seg_a(cfg: DictConfig) -> None:
     optimizer = build_optimizer(cfg, model)
     scheduler = build_scheduler(cfg, optimizer)
 
+    metric_fn = None
+    if cfg.task.get("ckpt_metric", None) == "building_iou":
+        building_cls = int(cfg.task.loss.get("building_class", 2))
+        n_cls = int(cfg.data.get("num_classes", 13))
+
+        def metric_fn(model, loader, device):
+            # building IoU over the whole val set; ignore labels outside [0, n_cls)
+            model.eval()
+            inter = union = 0
+            with torch.no_grad():
+                for batch in loader:
+                    feat = batch["points"].to(device); coord = batch["coords"].to(device); bidx = batch["batch"].to(device)
+                    rgb = batch.get("rgb"); rgb = rgb.to(device) if rgb is not None else None
+                    labels = batch["labels"].to(device)
+                    pred = model(feat, coord, bidx, rgb=rgb)["logits"].argmax(-1)
+                    valid = (labels >= 0) & (labels < n_cls)
+                    p = pred[valid] == building_cls; t = labels[valid] == building_cls
+                    inter += int((p & t).sum()); union += int((p | t).sum())
+            return inter / max(union, 1)
+
+        logger.info(f"Checkpoint selection: building IoU (class {building_cls} of {n_cls})")
+
     result = train_loop(
         cfg=cfg,
         model=model,
@@ -98,6 +120,7 @@ def train_seg_a(cfg: DictConfig) -> None:
         scheduler=scheduler,
         criterion=criterion,
         logger=logger,
+        metric_fn=metric_fn,
     )
 
     # Post-training evaluation

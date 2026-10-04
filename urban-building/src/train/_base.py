@@ -99,6 +99,7 @@ def train_loop(
     scheduler: _LRScheduler | None,
     criterion: Callable,
     logger: Logger,
+    metric_fn: Callable | None = None,   # (model, val_loader, device) -> float, higher is better; when given it selects the checkpoint instead of val loss
 ) -> TrainResult:
     device = torch.device(cfg.run.device)
     model = model.to(device)
@@ -161,6 +162,10 @@ def train_loop(
             logger.epoch(epoch, f"Val Loss: {val_loss:.6f}")
             val_losses.append(val_loss)
             current_loss = val_loss
+            if metric_fn is not None:
+                score = float(metric_fn(model, val_loader, device))
+                logger.epoch(epoch, f"Val metric: {score:.4f}")
+                current_loss = -score   # selection below is "lower is better"
         else:
             current_loss = train_loss
 
